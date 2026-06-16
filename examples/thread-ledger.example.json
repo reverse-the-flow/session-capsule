@@ -1,0 +1,59 @@
+{
+  "schema_version": "0.1",
+  "thread_id": "thread_research_loop_small",
+  "display_name": "Research loop small",
+  "created_at": "2026-06-16T16:30:00-05:00",
+  "updated_at": "2026-06-16T16:45:00-05:00",
+  "endpoint_id": "local-llamacpp",
+  "workspace_ref": "X:/Experiments/session-capsules",
+  "transcript_ref": ".capsules/threads/thread_research_loop_small/transcript.jsonl",
+  "active_capsule_id": "cap_004",
+  "capsules": [
+    {
+      "capsule_id": "prefill_user_default_v1",
+      "manifest_ref": ".capsules/prefills/user_default_v1/manifest.json",
+      "kind": "user_prefill",
+      "parent_capsule_id": null,
+      "token_start": 0,
+      "token_end": 900,
+      "endpoint_id": "local-llamacpp",
+      "status": "active"
+    },
+    {
+      "capsule_id": "cap_003",
+      "manifest_ref": ".capsules/threads/thread_research_loop_small/manifests/cap_003.json",
+      "kind": "thread_checkpoint",
+      "parent_capsule_id": "prefill_user_default_v1",
+      "token_start": 0,
+      "token_end": 2700,
+      "endpoint_id": "local-llamacpp",
+      "status": "superseded"
+    },
+    {
+      "capsule_id": "cap_004",
+      "manifest_ref": ".capsules/threads/thread_research_loop_small/manifests/cap_004.json",
+      "kind": "thread_checkpoint",
+      "parent_capsule_id": "cap_003",
+      "token_start": 0,
+      "token_end": 3900,
+      "endpoint_id": "local-llamacpp",
+      "status": "active"
+    }
+  ],
+  "open_diffs": [
+    {
+      "after_capsule_id": "cap_004",
+      "token_start": 3900,
+      "token_end": 4150,
+      "transcript_ref": ".capsules/threads/thread_research_loop_small/transcript.jsonl"
+    }
+  ],
+  "fallback": {
+    "mode": "replay_from_checkpoint",
+    "replay_start_token": 3900,
+    "reason": "If cap_004 cannot restore, replay the transcript diff after the latest compatible checkpoint."
+  },
+  "notes": [
+    "Thread is canonical. Capsules accelerate restore. Slots are allocated only during runtime."
+  ]
+}

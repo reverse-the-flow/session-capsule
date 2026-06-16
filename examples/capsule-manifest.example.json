@@ -1,0 +1,74 @@
+{
+  "schema_version": "0.1",
+  "capsule_id": "cap_004",
+  "thread_id": "thread_research_loop_small",
+  "kind": "thread_checkpoint",
+  "parent_capsule_id": "cap_003",
+  "endpoint_id": "local-llamacpp",
+  "created_at": "2026-06-16T16:45:00-05:00",
+  "expires_at": null,
+  "compatibility": {
+    "runtime": "llama.cpp",
+    "runtime_build": "server-cuda-example",
+    "model_ref": "mistral-nemo:12b",
+    "model_hash": "sha256-b559938ab7a0392fc9ea9675b82280f2a15669ec3e0e0fc491c9cb0a7681cf94",
+    "tokenizer_hash": "sha256-tokenizer-example",
+    "context_limit": 8192,
+    "slot_format": "llama.cpp-slot-v0"
+  },
+  "context": {
+    "token_start": 0,
+    "token_end": 3900,
+    "token_count": 3900,
+    "token_digest": "sha256-token-range-example",
+    "segments": [
+      {
+        "segment_id": "seg_001",
+        "source": "prefill",
+        "role": "system",
+        "token_start": 0,
+        "token_end": 900,
+        "digest": "sha256-prefill-source-example"
+      },
+      {
+        "segment_id": "seg_002",
+        "source": "user",
+        "role": "user",
+        "token_start": 900,
+        "token_end": 1500,
+        "digest": "sha256-user-delta-example"
+      },
+      {
+        "segment_id": "seg_003",
+        "source": "assistant",
+        "role": "assistant",
+        "token_start": 1500,
+        "token_end": 2700,
+        "digest": "sha256-assistant-output-example"
+      },
+      {
+        "segment_id": "seg_004",
+        "source": "tool",
+        "role": "tool",
+        "token_start": 2700,
+        "token_end": 3900,
+        "digest": "sha256-tool-output-example"
+      }
+    ]
+  },
+  "storage": {
+    "mode": "local_file",
+    "snapshot_ref": ".capsules/threads/thread_research_loop_small/snapshots/cap_004.bin",
+    "runtime_snapshot_ref": "/capsules/thread_research_loop_small/cap_004.bin",
+    "snapshot_bytes": 1342145488,
+    "snapshot_digest": "sha256-snapshot-example"
+  },
+  "security": {
+    "sealed": false,
+    "signature": null,
+    "encryption": null
+  },
+  "notes": [
+    "Example hard capsule manifest. The snapshot is runtime-specific and does not include model weights."
+  ]
+}

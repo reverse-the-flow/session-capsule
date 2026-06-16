@@ -1,0 +1,108 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.local/session-capsules/schemas/model-plane-job.schema.json",
+  "title": "Session Capsule Model Plane Job Packet",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "job_id",
+    "job_type",
+    "created_at",
+    "params"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "0.1"
+    },
+    "job_id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_.:-]+$"
+    },
+    "job_type": {
+      "type": "string",
+      "enum": [
+        "resume_thread",
+        "checkpoint_thread",
+        "export_thread",
+        "validate_capsule"
+      ]
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "requested_by": {
+      "type": "string"
+    },
+    "dry_run": {
+      "type": "boolean"
+    },
+    "params": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "thread_id": {
+          "type": "string"
+        },
+        "capsule_id": {
+          "type": ["string", "null"]
+        },
+        "endpoint_id": {
+          "type": "string"
+        },
+        "mode": {
+          "type": "string",
+          "enum": ["soft", "hard"]
+        },
+        "slot": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "append_diff": {
+          "type": "boolean"
+        },
+        "chat_path": {
+          "type": "string"
+        },
+        "max_tokens": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "temperature": {
+          "type": "number",
+          "minimum": 0
+        },
+        "timeout": {
+          "type": "number",
+          "minimum": 0
+        },
+        "runtime_filename": {
+          "type": "string"
+        },
+        "out": {
+          "type": "string"
+        },
+        "include_snapshots": {
+          "type": "boolean"
+        },
+        "redact_transcript": {
+          "type": "boolean"
+        },
+        "force": {
+          "type": "boolean"
+        },
+        "require_snapshot": {
+          "type": "boolean"
+        }
+      }
+    },
+    "notes": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  }
+}

@@ -1,0 +1,32 @@
+{
+  "schema_version": "0.1",
+  "endpoint_id": "local-llamacpp",
+  "type": "llamacpp",
+  "base_url": "http://localhost:8080",
+  "runtime": {
+    "name": "llama.cpp",
+    "build": "server-cuda-example",
+    "model_ref": "mistral-nemo:12b",
+    "model_hash": "sha256-b559938ab7a0392fc9ea9675b82280f2a15669ec3e0e0fc491c9cb0a7681cf94",
+    "tokenizer_hash": "sha256-tokenizer-example",
+    "context_limit": 8192
+  },
+  "capabilities": {
+    "soft_capsules": true,
+    "server_side_handles": false,
+    "slot_save_restore": true,
+    "user_carried_blobs": false,
+    "sealed_blobs": false,
+    "transcript_replay_fallback": true
+  },
+  "slot_api": {
+    "slots_path": "/slots",
+    "save_action": "save",
+    "restore_action": "restore",
+    "slot_field": "id_slot"
+  },
+  "checked_at": "2026-06-16T16:45:00-05:00",
+  "notes": [
+    "This example describes a local llama.cpp endpoint with hard local file capsules but no sealed user-carried blob support."
+  ]
+}

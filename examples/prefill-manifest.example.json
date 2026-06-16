@@ -1,0 +1,56 @@
+{
+  "schema_version": "0.1",
+  "capsule_id": "prefill_user_default_v001",
+  "thread_id": "prefill:user_default",
+  "kind": "user_prefill",
+  "parent_capsule_id": null,
+  "endpoint_id": "local-llamacpp",
+  "created_at": "2026-06-16T16:50:00-05:00",
+  "expires_at": null,
+  "compatibility": {
+    "runtime": "llama.cpp",
+    "runtime_build": "server-cuda-example",
+    "model_ref": "mistral-nemo:12b",
+    "model_hash": "sha256-b559938ab7a0392fc9ea9675b82280f2a15669ec3e0e0fc491c9cb0a7681cf94",
+    "tokenizer_hash": "sha256-tokenizer-example",
+    "context_limit": 8192,
+    "slot_format": "soft-prefill-source"
+  },
+  "context": {
+    "token_start": 0,
+    "token_end": 900,
+    "token_count": 900,
+    "token_digest": "sha256-prefill-source-example",
+    "segments": [
+      {
+        "segment_id": "user_default_v001_source",
+        "source": "prefill",
+        "role": "system",
+        "token_start": 0,
+        "token_end": 900,
+        "digest": "sha256-prefill-source-example"
+      }
+    ]
+  },
+  "prefill_source": {
+    "name": "user_default",
+    "version": "v001",
+    "source_ref": ".capsules/prefills/user_default/v001/source.md",
+    "source_digest": "sha256-prefill-source-example"
+  },
+  "storage": {
+    "mode": "soft",
+    "snapshot_ref": null,
+    "runtime_snapshot_ref": null,
+    "snapshot_bytes": null,
+    "snapshot_digest": null
+  },
+  "security": {
+    "sealed": false,
+    "signature": null,
+    "encryption": null
+  },
+  "notes": [
+    "Example user prefill capsule. Source text is retained so soft fallback can replay it."
+  ]
+}

@@ -1,0 +1,149 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.local/session-capsules/schemas/endpoint-capabilities.schema.json",
+  "title": "Session Capsule Endpoint Capabilities",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "endpoint_id",
+    "type",
+    "base_url",
+    "runtime",
+    "capabilities",
+    "checked_at"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "0.1"
+    },
+    "endpoint_id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_.:-]+$"
+    },
+    "type": {
+      "type": "string",
+      "enum": [
+        "llamacpp",
+        "ollama",
+        "vllm",
+        "openai_compatible",
+        "hosted"
+      ]
+    },
+    "base_url": {
+      "type": "string"
+    },
+    "runtime": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "build",
+        "model_ref",
+        "model_hash",
+        "tokenizer_hash",
+        "context_limit"
+      ],
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "build": {
+          "type": "string"
+        },
+        "model_ref": {
+          "type": "string"
+        },
+        "model_hash": {
+          "type": "string"
+        },
+        "tokenizer_hash": {
+          "type": "string"
+        },
+        "context_limit": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "capabilities": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "soft_capsules",
+        "server_side_handles",
+        "slot_save_restore",
+        "user_carried_blobs",
+        "sealed_blobs",
+        "transcript_replay_fallback"
+      ],
+      "properties": {
+        "soft_capsules": {
+          "type": "boolean"
+        },
+        "server_side_handles": {
+          "type": "boolean"
+        },
+        "slot_save_restore": {
+          "type": "boolean"
+        },
+        "user_carried_blobs": {
+          "type": "boolean"
+        },
+        "sealed_blobs": {
+          "type": "boolean"
+        },
+        "transcript_replay_fallback": {
+          "type": "boolean"
+        }
+      }
+    },
+    "slot_api": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "slots_path": {
+          "type": "string"
+        },
+        "save_action": {
+          "type": "string"
+        },
+        "restore_action": {
+          "type": "string"
+        },
+        "slot_field": {
+          "type": "string"
+        }
+      }
+    },
+    "doctor": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "slots_url": {
+          "type": "string"
+        },
+        "client_duration_ms": {
+          "type": "number",
+          "minimum": 0
+        },
+        "slot_count": {
+          "type": ["integer", "null"],
+          "minimum": 0
+        }
+      }
+    },
+    "checked_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "notes": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  }
+}

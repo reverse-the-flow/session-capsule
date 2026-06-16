@@ -1,0 +1,1607 @@
+#!/usr/bin/env python3
+"""Minimal Session Capsules CLI ledger.
+
+This is the Stage 2/3 harness. It manages endpoints, thread ledgers,
+transcripts, soft checkpoints, and local llama.cpp hard checkpoints.
+"""
+
+from __future__ import annotations
+
+import argparse
+import hashlib
+import json
+import re
+import sys
+import zipfile
+from dataclasses import dataclass
+from datetime import datetime
+from pathlib import Path
+from typing import Any
+from urllib import error, request
+
+
+JSONDict = dict[str, Any]
+
+
+CAPABILITY_KEYS = [
+    "soft_capsules",
+    "server_side_handles",
+    "slot_save_restore",
+    "user_carried_blobs",
+    "sealed_blobs",
+    "transcript_replay_fallback",
+]
+
+
+def now_iso() -> str:
+    return datetime.now().astimezone().isoformat(timespec="seconds")
+
+
+def slugify(value: str) -> str:
+    slug = re.sub(r"[^A-Za-z0-9_.:-]+", "-", value.strip()).strip("-")
+    return slug or f"thread-{datetime.now().strftime('%Y%m%d-%H%M%S')}"
+
+
+def digest_text(value: str) -> str:
+    return "sha256:" + hashlib.sha256(value.encode("utf-8")).hexdigest()
+
+
+def digest_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return "sha256:" + digest.hexdigest()
+
+
+def estimate_tokens(value: str) -> int:
+    if not value:
+        return 0
+    # Soft checkpoints do not have tokenizer access yet. This is a stable
+    # estimate used only for ledger ranges until a runtime adapter supplies
+    # true token positions.
+    return max(1, len(re.findall(r"\S+", value)))
+
+
+def read_json(path: Path) -> JSONDict:
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def write_json(path: Path, payload: JSONDict) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+
+
+def append_jsonl(path: Path, payload: JSONDict) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a", encoding="utf-8") as handle:
+        handle.write(json.dumps(payload, sort_keys=True) + "\n")
+
+
+def read_jsonl(path: Path) -> list[JSONDict]:
+    if not path.exists():
+        return []
+    rows: list[JSONDict] = []
+    for line_number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
+        if not line.strip():
+            continue
+        item = json.loads(line)
+        if not isinstance(item, dict):
+            raise ValueError(f"{path}:{line_number} is not a JSON object")
+        rows.append(item)
+    return rows
+
+
+@dataclass
+class Store:
+    root: Path
+
+    @property
+    def endpoints_dir(self) -> Path:
+        return self.root / "endpoints"
+
+    @property
+    def threads_dir(self) -> Path:
+        return self.root / "threads"
+
+    @property
+    def prefills_dir(self) -> Path:
+        return self.root / "prefills"
+
+    def endpoint_path(self, endpoint_id: str) -> Path:
+        return self.endpoints_dir / f"{endpoint_id}.json"
+
+    def thread_dir(self, thread_id: str) -> Path:
+        return self.threads_dir / thread_id
+
+    def ledger_path(self, thread_id: str) -> Path:
+        return self.thread_dir(thread_id) / "thread-ledger.json"
+
+    def transcript_path(self, thread_id: str) -> Path:
+        return self.thread_dir(thread_id) / "transcript.jsonl"
+
+    def manifests_dir(self, thread_id: str) -> Path:
+        return self.thread_dir(thread_id) / "manifests"
+
+    def snapshots_dir(self, thread_id: str) -> Path:
+        return self.thread_dir(thread_id) / "snapshots"
+
+    def prefill_dir(self, name: str) -> Path:
+        return self.prefills_dir / slugify(name)
+
+    def prefill_index_path(self, name: str) -> Path:
+        return self.prefill_dir(name) / "index.json"
+
+    def prefill_version_dir(self, name: str, version: str) -> Path:
+        return self.prefill_dir(name) / version
+
+    def relative_ref(self, path: Path) -> str:
+        return path.resolve().relative_to(self.root.resolve()).as_posix()
+
+    def load_endpoint(self, endpoint_id: str) -> JSONDict:
+        path = self.endpoint_path(endpoint_id)
+        if not path.exists():
+            raise FileNotFoundError(f"Endpoint not found: {endpoint_id}")
+        return read_json(path)
+
+    def load_ledger(self, thread_id: str) -> JSONDict:
+        path = self.ledger_path(thread_id)
+        if not path.exists():
+            raise FileNotFoundError(f"Thread not found: {thread_id}")
+        return read_json(path)
+
+
+def make_endpoint(args: argparse.Namespace) -> JSONDict:
+    endpoint_type = args.type
+    runtime_name = args.runtime_name or ("llama.cpp" if endpoint_type == "llamacpp" else endpoint_type)
+    slot_save_restore = bool(args.slot_save_restore or endpoint_type == "llamacpp")
+    return {
+        "schema_version": "0.1",
+        "endpoint_id": args.endpoint_id,
+        "type": endpoint_type,
+        "base_url": args.base_url,
+        "runtime": {
+            "name": runtime_name,
+            "build": args.runtime_build,
+            "model_ref": args.model_ref,
+            "model_hash": args.model_hash,
+            "tokenizer_hash": args.tokenizer_hash,
+            "context_limit": args.context_limit,
+        },
+        "capabilities": {
+            "soft_capsules": True,
+            "server_side_handles": False,
+            "slot_save_restore": slot_save_restore,
+            "user_carried_blobs": False,
+            "sealed_blobs": False,
+            "transcript_replay_fallback": True,
+        },
+        "slot_api": {
+            "slots_path": "/slots",
+            "save_action": "save",
+            "restore_action": "restore",
+            "slot_field": args.slot_field,
+        },
+        "checked_at": now_iso(),
+        "notes": [
+            "Created by capsule_cli.py. Hard capabilities should be confirmed with endpoint doctor."
+        ],
+    }
+
+
+def endpoint_add(args: argparse.Namespace) -> int:
+    store = Store(args.state_dir)
+    path = store.endpoint_path(args.endpoint_id)
+    if path.exists() and not args.force:
+        print(f"Endpoint already exists: {path}", file=sys.stderr)
+        return 2
+    endpoint = make_endpoint(args)
+    write_json(path, endpoint)
+    print(f"wrote endpoint: {path}")
+    return 0
+
+
+def get_json(url: str, timeout: float) -> tuple[Any, float]:
+    req = request.Request(url, method="GET")
+    started = datetime.now()
+    try:
+        with request.urlopen(req, timeout=timeout) as response:
+            body = response.read().decode("utf-8")
+    except error.HTTPError as exc:
+        body = exc.read().decode("utf-8", errors="replace")
+        raise RuntimeError(f"HTTP {exc.code} for {url}: {body}") from exc
+    except error.URLError as exc:
+        raise RuntimeError(f"Request failed for {url}: {exc.reason}") from exc
+    elapsed = (datetime.now() - started).total_seconds() * 1000
+    return json.loads(body or "null"), round(elapsed, 3)
+
+
+def post_json(url: str, payload: JSONDict, timeout: float) -> tuple[JSONDict, float]:
+    encoded = json.dumps(payload).encode("utf-8")
+    req = request.Request(
+        url,
+        data=encoded,
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    started = datetime.now()
+    try:
+        with request.urlopen(req, timeout=timeout) as response:
+            body = response.read().decode("utf-8")
+    except error.HTTPError as exc:
+        body = exc.read().decode("utf-8", errors="replace")
+        raise RuntimeError(f"HTTP {exc.code} for {url}: {body}") from exc
+    except error.URLError as exc:
+        raise RuntimeError(f"Request failed for {url}: {exc.reason}") from exc
+    elapsed = (datetime.now() - started).total_seconds() * 1000
+    parsed = json.loads(body or "{}")
+    if not isinstance(parsed, dict):
+        return {"response": parsed}, round(elapsed, 3)
+    return parsed, round(elapsed, 3)
+
+
+def slot_action(
+    endpoint: JSONDict,
+    slot_id: int,
+    action: str,
+    filename: str | None,
+    timeout: float,
+) -> tuple[JSONDict, float]:
+    save_action = endpoint.get("slot_api", {}).get("save_action", "save")
+    restore_action = endpoint.get("slot_api", {}).get("restore_action", "restore")
+    if action == "save":
+        runtime_action = save_action
+    elif action == "restore":
+        runtime_action = restore_action
+    else:
+        runtime_action = action
+    payload: JSONDict = {}
+    if filename is not None:
+        payload["filename"] = filename
+    url = f"{endpoint['base_url'].rstrip('/')}/slots/{slot_id}?action={runtime_action}"
+    return post_json(url, payload, timeout)
+
+
+def chat_completion(
+    endpoint: JSONDict,
+    slot_id: int,
+    messages: list[JSONDict],
+    max_tokens: int,
+    temperature: float,
+    timeout: float,
+    chat_path: str,
+) -> tuple[JSONDict, float]:
+    slot_field = endpoint.get("slot_api", {}).get("slot_field", "id_slot")
+    payload: JSONDict = {
+        "messages": messages,
+        "stream": False,
+        "cache_prompt": True,
+        "max_tokens": max_tokens,
+        "temperature": temperature,
+    }
+    payload[slot_field] = slot_id
+    return post_json(f"{endpoint['base_url'].rstrip('/')}{chat_path}", payload, timeout)
+
+
+def endpoint_doctor(args: argparse.Namespace) -> int:
+    store = Store(args.state_dir)
+    endpoint = store.load_endpoint(args.endpoint_id)
+    slot_api = endpoint.get("slot_api", {})
+    slots_path = slot_api.get("slots_path", "/slots")
+    url = endpoint["base_url"].rstrip("/") + slots_path
+    endpoint["checked_at"] = now_iso()
+
+    try:
+        slots, elapsed_ms = get_json(url, args.timeout)
+    except Exception as exc:  # noqa: BLE001 - doctor reports degraded state.
+        endpoint["capabilities"]["slot_save_restore"] = False
+        endpoint["notes"] = [
+            *endpoint.get("notes", []),
+            f"doctor could not reach {url}: {exc}",
+        ]
+        write_json(store.endpoint_path(args.endpoint_id), endpoint)
+        print(f"endpoint reachable: no ({exc})")
+        print("soft capsules remain available; hard slot restore is unverified")
+        return 1 if args.strict else 0
+
+    endpoint["capabilities"]["slot_save_restore"] = True
+    endpoint["doctor"] = {
+        "slots_url": url,
+        "client_duration_ms": elapsed_ms,
+        "slot_count": len(slots) if isinstance(slots, list) else None,
+    }
+    write_json(store.endpoint_path(args.endpoint_id), endpoint)
+    print(f"endpoint reachable: yes ({elapsed_ms} ms)")
+    if isinstance(slots, list):
+        print(f"slots: {len(slots)}")
+    else:
+        print("slots response was not a list")
+    return 0
+
+
+def load_prefill_source(args: argparse.Namespace) -> str:
+    if getattr(args, "input", None):
+        return Path(args.input).read_text(encoding="utf-8")
+    if getattr(args, "content", None) is not None:
+        return args.content
+    raise ValueError("Provide --input or --content")
+
+
+def prefill_index_default(name: str) -> JSONDict:
+    return {
+        "schema_version": "0.1",
+        "prefill_name": slugify(name),
+        "created_at": now_iso(),
+        "updated_at": now_iso(),
+        "active_version": None,
+        "versions": [],
+    }
+
+
+def load_prefill_index(store: Store, name: str) -> JSONDict:
+    path = store.prefill_index_path(name)
+    if not path.exists():
+        raise FileNotFoundError(f"Prefill not found: {name}")
+    return read_json(path)
+
+
+def next_prefill_version(index: JSONDict) -> str:
+    count = len(index.get("versions", [])) + 1
+    return f"v{count:03d}"
+
+
+def prefill_manifest_ref(name: str, version: str) -> str:
+    return (Path("prefills") / slugify(name) / version / "manifest.json").as_posix()
+
+
+def prefill_source_ref(name: str, version: str) -> str:
+    return (Path("prefills") / slugify(name) / version / "source.md").as_posix()
+
+
+def latest_prefill_link(index: JSONDict, version: str | None = None) -> JSONDict:
+    versions = index.get("versions", [])
+    if version is None:
+        active = index.get("active_version")
+        if active is not None:
+            version = active
+    for item in reversed(versions):
+        if version is None or item["version"] == version:
+            return item
+    raise FileNotFoundError(f"Prefill version not found: {version or '<latest>'}")
+
+
+def resolve_prefill(
+    store: Store,
+    name: str,
+    version: str | None,
+    endpoint_id: str | None = None,
+) -> tuple[JSONDict, JSONDict]:
+    index = load_prefill_index(store, name)
+    link = latest_prefill_link(index, version)
+    manifest = read_json(store.root / link["manifest_ref"])
+    if endpoint_id is not None and manifest["endpoint_id"] != endpoint_id:
+        raise RuntimeError(
+            f"Prefill endpoint mismatch: {manifest['endpoint_id']} != {endpoint_id}"
+        )
+    return link, manifest
+
+
+def write_prefill_index(store: Store, name: str, index: JSONDict) -> None:
+    index["updated_at"] = now_iso()
+    write_json(store.prefill_index_path(name), index)
+
+
+def prefill_create(args: argparse.Namespace) -> int:
+    store = Store(args.state_dir)
+    endpoint = store.load_endpoint(args.endpoint)
+    source = load_prefill_source(args)
+    name = slugify(args.name)
+    index_path = store.prefill_index_path(name)
+    index = read_json(index_path) if index_path.exists() else prefill_index_default(name)
+    version = args.version or next_prefill_version(index)
+    version_dir = store.prefill_version_dir(name, version)
+    manifest_path = version_dir / "manifest.json"
+    if manifest_path.exists() and not args.force:
+        raise FileExistsError(f"Prefill version already exists: {name} {version}")
+
+    source_path = version_dir / "source.md"
+    source_path.parent.mkdir(parents=True, exist_ok=True)
+    source_path.write_text(source, encoding="utf-8")
+
+    token_end = estimate_tokens(source)
+    capsule_id = f"prefill_{name}_{version}"
+    source_digest = digest_text(source)
+    storage: JSONDict = {
+        "mode": "soft",
+        "snapshot_ref": None,
+        "runtime_snapshot_ref": None,
+        "snapshot_bytes": None,
+        "snapshot_digest": None,
+    }
+    notes = [
+        "Prefill capsule source is stored for audit and transcript replay fallback."
+    ]
+    slot_format = "soft-prefill-source"
+
+    if args.hard:
+        if not endpoint.get("capabilities", {}).get("slot_save_restore", False):
+            raise RuntimeError("Endpoint does not advertise slot_save_restore. Run endpoint doctor or use --soft.")
+        prefill_response, prefill_ms = chat_completion(
+            endpoint,
+            args.slot,
+            [{"role": args.role, "content": source}],
+            0,
+            args.temperature,
+            args.timeout,
+            args.chat_path,
+        )
+        snapshot_path = version_dir / "snapshot.bin"
+        runtime_snapshot_ref = args.runtime_filename or str(snapshot_path.resolve())
+        save_response, save_ms = slot_action(endpoint, args.slot, "save", runtime_snapshot_ref, args.timeout)
+        snapshot_bytes, snapshot_digest = snapshot_metadata(snapshot_path, save_response)
+        storage = {
+            "mode": "local_file",
+            "snapshot_ref": store.relative_ref(snapshot_path),
+            "runtime_snapshot_ref": runtime_snapshot_ref,
+            "snapshot_bytes": snapshot_bytes,
+            "snapshot_digest": snapshot_digest,
+        }
+        slot_format = "llama.cpp-prefill-slot-save-restore"
+        notes.extend(
+            [
+                f"Hard prefill loaded into slot {args.slot} before save.",
+                f"prefill completion client duration: {prefill_ms} ms.",
+                f"llama.cpp save client duration: {save_ms} ms.",
+            ]
+        )
+        if prefill_response.get("choices"):
+            notes.append("Runtime returned a chat completion response while compiling the prefill.")
+
+    manifest: JSONDict = {
+        "schema_version": "0.1",
+        "capsule_id": capsule_id,
+        "thread_id": f"prefill:{name}",
+        "kind": args.kind,
+        "parent_capsule_id": None,
+        "endpoint_id": endpoint["endpoint_id"],
+        "created_at": now_iso(),
+        "expires_at": None,
+        "compatibility": compatibility_from_endpoint(endpoint, token_end, slot_format),
+        "context": {
+            "token_start": 0,
+            "token_end": token_end,
+            "token_count": token_end,
+            "token_digest": source_digest,
+            "segments": [
+                {
+                    "segment_id": f"{name}_{version}_source",
+                    "source": "prefill",
+                    "role": args.role,
+                    "token_start": 0,
+                    "token_end": token_end,
+                    "digest": source_digest,
+                }
+            ],
+        },
+        "prefill_source": {
+            "name": name,
+            "version": version,
+            "source_ref": store.relative_ref(source_path),
+            "source_digest": source_digest,
+        },
+        "storage": storage,
+        "security": {
+            "sealed": False,
+            "signature": None,
+            "encryption": None,
+        },
+        "notes": notes,
+    }
+    write_json(manifest_path, manifest)
+
+    index["active_version"] = version
+    existing_versions = [item for item in index.get("versions", []) if item["version"] != version]
+    for item in existing_versions:
+        if item.get("status") == "active":
+            item["status"] = "superseded"
+    existing_versions.append(
+        {
+            "version": version,
+            "capsule_id": capsule_id,
+            "manifest_ref": prefill_manifest_ref(name, version),
+            "source_ref": prefill_source_ref(name, version),
+            "source_digest": source_digest,
+            "endpoint_id": endpoint["endpoint_id"],
+            "kind": args.kind,
+            "storage_mode": storage["mode"],
+            "created_at": manifest["created_at"],
+            "status": "active",
+        }
+    )
+    index["versions"] = existing_versions
+    write_prefill_index(store, name, index)
+    print(f"created prefill: {name} {version} ({storage['mode']})")
+    return 0
+
+
+def prefill_list(args: argparse.Namespace) -> int:
+    store = Store(args.state_dir)
+    if not store.prefills_dir.exists():
+        print("prefills: 0")
+        return 0
+    count = 0
+    for index_path in sorted(store.prefills_dir.glob("*/index.json")):
+        index = read_json(index_path)
+        count += 1
+        active = index.get("active_version")
+        print(f"{index['prefill_name']} active={active} versions={len(index.get('versions', []))}")
+        if args.verbose:
+            for version in index.get("versions", []):
+                print(
+                    f"  {version['version']} {version['storage_mode']} {version['endpoint_id']} {version['status']}"
+                )
+    if count == 0:
+        print("prefills: 0")
+    return 0
+
+
+def prefill_diff(args: argparse.Namespace) -> int:
+    store = Store(args.state_dir)
+    link, manifest = resolve_prefill(store, args.name, args.version)
+    new_source = load_prefill_source(args)
+    new_digest = digest_text(new_source)
+    old_digest = manifest["prefill_source"]["source_digest"]
+    print(f"prefill: {args.name}")
+    print(f"version: {manifest['prefill_source']['version']}")
+    print(f"old digest: {old_digest}")
+    print(f"new digest: {new_digest}")
+    print(f"old estimated tokens: {manifest['context']['token_count']}")
+    print(f"new estimated tokens: {estimate_tokens(new_source)}")
+    if old_digest == new_digest:
+        print("status: unchanged")
+        return 0
+    print("status: changed; create a new prefill version rather than mutating this one")
+    print(f"active capsule: {link['capsule_id']}")
+    return 1 if args.strict else 0
+
+
+def thread_start(args: argparse.Namespace) -> int:
+    store = Store(args.state_dir)
+    endpoint = store.load_endpoint(args.endpoint)
+    thread_id = args.thread_id or slugify(args.name)
+    ledger_path = store.ledger_path(thread_id)
+    if ledger_path.exists() and not args.force:
+        print(f"Thread already exists: {thread_id}", file=sys.stderr)
+        return 2
+
+    transcript_ref = store.transcript_path(thread_id).relative_to(store.root).as_posix()
+    capsules: list[JSONDict] = []
+    active_capsule_id = None
+    fallback = {
+        "mode": "full_replay",
+        "replay_start_token": 0,
+        "reason": "No checkpoint has been created yet.",
+    }
+    notes = [
+        "Thread ledger created by capsule_cli.py. Transcript is canonical; capsules are acceleration."
+    ]
+
+    if args.prefill:
+        prefill_link, prefill_manifest = resolve_prefill(store, args.prefill, args.prefill_version, endpoint["endpoint_id"])
+        active_capsule_id = prefill_link["capsule_id"]
+        prefill_end = int(prefill_manifest["context"]["token_end"])
+        capsules.append(
+            {
+                "capsule_id": prefill_link["capsule_id"],
+                "manifest_ref": prefill_link["manifest_ref"],
+                "kind": prefill_manifest["kind"],
+                "parent_capsule_id": None,
+                "token_start": 0,
+                "token_end": prefill_end,
+                "endpoint_id": endpoint["endpoint_id"],
+                "status": "active",
+            }
+        )
+        if prefill_manifest["storage"]["mode"] == "soft":
+            fallback = {
+                "mode": "full_replay",
+                "replay_start_token": 0,
+                "reason": f"Prefill {args.prefill} is soft-only and must be replayed from source.",
+            }
+        else:
+            fallback = {
+                "mode": "replay_from_checkpoint",
+                "replay_start_token": prefill_end,
+                "reason": f"Restore prefill {args.prefill}, then append transcript messages after token {prefill_end}.",
+            }
+        notes.append(f"Started from prefill capsule {active_capsule_id}.")
+
+    ledger: JSONDict = {
+        "schema_version": "0.1",
+        "thread_id": thread_id,
+        "display_name": args.name,
+        "created_at": now_iso(),
+        "updated_at": now_iso(),
+        "endpoint_id": endpoint["endpoint_id"],
+        "workspace_ref": args.workspace,
+        "transcript_ref": transcript_ref,
+        "active_capsule_id": active_capsule_id,
+        "capsules": capsules,
+        "open_diffs": [],
+        "fallback": fallback,
+        "notes": notes,
+    }
+    write_json(ledger_path, ledger)
+    store.transcript_path(thread_id).parent.mkdir(parents=True, exist_ok=True)
+    store.transcript_path(thread_id).touch(exist_ok=True)
+    print(f"started thread: {thread_id}")
+    print(f"ledger: {ledger_path}")
+    return 0
+
+
+def load_content(args: argparse.Namespace) -> str:
+    if args.file:
+        return Path(args.file).read_text(encoding="utf-8")
+    if args.content is not None:
+        return args.content
+    raise ValueError("Provide --content or --file")
+
+
+def transcript_token_end(rows: list[JSONDict]) -> int:
+    if not rows:
+        return 0
+    return int(rows[-1].get("token_end", 0))
+
+
+def active_capsule_token_end(ledger: JSONDict) -> int:
+    active = ledger.get("active_capsule_id")
+    if active is None:
+        return 0
+    for item in ledger.get("capsules", []):
+        if item["capsule_id"] == active:
+            return int(item.get("token_end", 0))
+    return 0
+
+
+def transcript_or_capsule_token_end(rows: list[JSONDict], ledger: JSONDict) -> int:
+    if rows:
+        return transcript_token_end(rows)
+    return active_capsule_token_end(ledger)
+
+
+def thread_append(args: argparse.Namespace) -> int:
+    store = Store(args.state_dir)
+    ledger = store.load_ledger(args.thread)
+    transcript_path = store.transcript_path(args.thread)
+    rows = read_jsonl(transcript_path)
+    content = load_content(args)
+    token_start = transcript_or_capsule_token_end(rows, ledger)
+    token_count = estimate_tokens(content)
+    token_end = token_start + token_count
+    message_id = f"msg_{len(rows) + 1:04d}"
+    payload: JSONDict = {
+        "schema_version": "0.1",
+        "message_id": message_id,
+        "created_at": now_iso(),
+        "role": args.role,
+        "content": content,
+        "content_digest": digest_text(content),
+        "token_start": token_start,
+        "token_end": token_end,
+        "token_count_estimated": token_count,
+    }
+    append_jsonl(transcript_path, payload)
+
+    ledger["updated_at"] = now_iso()
+    active = ledger.get("active_capsule_id")
+    existing_diffs = ledger.get("open_diffs", [])
+    if existing_diffs and existing_diffs[0].get("after_capsule_id") == active:
+        diff_start = int(existing_diffs[0].get("token_start", token_start))
+    elif active is None:
+        diff_start = 0
+    else:
+        diff_start = token_start
+
+    ledger["open_diffs"] = [
+        {
+            "after_capsule_id": active,
+            "token_start": diff_start,
+            "token_end": token_end,
+            "transcript_ref": ledger["transcript_ref"],
+        }
+    ]
+    if active is None:
+        ledger["fallback"] = {
+            "mode": "full_replay",
+            "replay_start_token": 0,
+            "reason": "Thread has transcript content but no checkpoint yet.",
+        }
+    write_json(store.ledger_path(args.thread), ledger)
+    print(f"appended {message_id} to {args.thread}: tokens {token_start}..{token_end} estimated")
+    return 0
+
+
+def build_segments(rows: list[JSONDict]) -> list[JSONDict]:
+    segments: list[JSONDict] = []
+    for row in rows:
+        segments.append(
+            {
+                "segment_id": row["message_id"],
+                "source": row["role"] if row["role"] in {"system", "user", "assistant", "tool"} else "metadata",
+                "role": row["role"],
+                "token_start": row["token_start"],
+                "token_end": row["token_end"],
+                "digest": row["content_digest"],
+            }
+        )
+    return segments
+
+
+def find_capsule_link(ledger: JSONDict, capsule_id: str | None) -> JSONDict | None:
+    if capsule_id is None:
+        return None
+    for item in ledger.get("capsules", []):
+        if item["capsule_id"] == capsule_id:
+            return item
+    return None
+
+
+def build_checkpoint_segments(store: Store, ledger: JSONDict, rows: list[JSONDict], parent_capsule_id: str | None) -> list[JSONDict]:
+    segments: list[JSONDict] = []
+    previous_end = 0
+    parent = find_capsule_link(ledger, parent_capsule_id)
+    if parent is not None:
+        parent_manifest = load_manifest_ref(store, parent["manifest_ref"])
+        previous_end = int(parent["token_end"])
+        source = "prefill" if str(parent["kind"]).endswith("_prefill") else "metadata"
+        segments.append(
+            {
+                "segment_id": parent["capsule_id"],
+                "source": source,
+                "role": "capsule_parent",
+                "token_start": 0,
+                "token_end": previous_end,
+                "digest": parent_manifest["context"]["token_digest"],
+            }
+        )
+
+    for row in rows:
+        row_start = int(row["token_start"])
+        row_end = int(row["token_end"])
+        if row_end <= previous_end:
+            continue
+        if row_start != previous_end:
+            raise RuntimeError(
+                f"Transcript row {row['message_id']} starts at {row_start}, expected {previous_end}"
+            )
+        source = row["role"] if row["role"] in {"system", "user", "assistant", "tool"} else "metadata"
+        segments.append(
+            {
+                "segment_id": row["message_id"],
+                "source": source,
+                "role": row["role"],
+                "token_start": row_start,
+                "token_end": row_end,
+                "digest": row["content_digest"],
+            }
+        )
+        previous_end = row_end
+    return segments
+
+
+def transcript_text(rows: list[JSONDict]) -> str:
+    return "\n".join(f"{row['role']}: {row['content']}" for row in rows)
+
+
+def context_digest(store: Store, ledger: JSONDict, rows: list[JSONDict], parent_capsule_id: str | None) -> str:
+    pieces: list[str] = []
+    parent = find_capsule_link(ledger, parent_capsule_id)
+    if parent is not None:
+        parent_manifest = load_manifest_ref(store, parent["manifest_ref"])
+        pieces.append(parent_manifest["context"]["token_digest"])
+    pieces.append(transcript_text(rows))
+    return digest_text("\n".join(pieces))
+
+
+def compatibility_from_endpoint(endpoint: JSONDict, token_end: int, slot_format: str) -> JSONDict:
+    return {
+        "runtime": endpoint["runtime"]["name"],
+        "runtime_build": endpoint["runtime"]["build"],
+        "model_ref": endpoint["runtime"]["model_ref"],
+        "model_hash": endpoint["runtime"]["model_hash"],
+        "tokenizer_hash": endpoint["runtime"]["tokenizer_hash"],
+        "context_limit": max(endpoint["runtime"]["context_limit"], token_end, 1),
+        "slot_format": slot_format,
+    }
+
+
+def checkpoint_soft(args: argparse.Namespace) -> int:
+    store = Store(args.state_dir)
+    ledger = store.load_ledger(args.thread)
+    endpoint = store.load_endpoint(ledger["endpoint_id"])
+    rows = read_jsonl(store.transcript_path(args.thread))
+    token_end = transcript_or_capsule_token_end(rows, ledger)
+    capsule_id = args.capsule_id or f"soft_{datetime.now().strftime('%Y%m%d-%H%M%S')}"
+    manifest_ref = (Path("threads") / args.thread / "manifests" / f"{capsule_id}.json").as_posix()
+    parent_capsule_id = ledger.get("active_capsule_id")
+
+    compatibility = compatibility_from_endpoint(endpoint, token_end, "soft-transcript-ledger")
+    manifest: JSONDict = {
+        "schema_version": "0.1",
+        "capsule_id": capsule_id,
+        "thread_id": args.thread,
+        "kind": "soft_checkpoint",
+        "parent_capsule_id": parent_capsule_id,
+        "endpoint_id": endpoint["endpoint_id"],
+        "created_at": now_iso(),
+        "expires_at": None,
+        "compatibility": compatibility,
+        "context": {
+            "token_start": 0,
+            "token_end": token_end,
+            "token_count": token_end,
+            "token_digest": context_digest(store, ledger, rows, parent_capsule_id),
+            "segments": build_checkpoint_segments(store, ledger, rows, parent_capsule_id),
+        },
+        "storage": {
+            "mode": "soft",
+            "snapshot_ref": None,
+            "snapshot_bytes": None,
+            "snapshot_digest": None,
+        },
+        "security": {
+            "sealed": False,
+            "signature": None,
+            "encryption": None,
+        },
+        "notes": [
+            "Soft checkpoint: no KV snapshot is stored. Restore requires transcript replay."
+        ],
+    }
+    write_json(store.manifests_dir(args.thread) / f"{capsule_id}.json", manifest)
+
+    ledger["updated_at"] = now_iso()
+    ledger["active_capsule_id"] = capsule_id
+    ledger["capsules"].append(
+        {
+            "capsule_id": capsule_id,
+            "manifest_ref": manifest_ref,
+            "kind": "soft_checkpoint",
+            "parent_capsule_id": parent_capsule_id,
+            "token_start": 0,
+            "token_end": token_end,
+            "endpoint_id": endpoint["endpoint_id"],
+            "status": "active",
+        }
+    )
+    for item in ledger["capsules"]:
+        if item["capsule_id"] != capsule_id and item.get("status") == "active":
+            item["status"] = "superseded"
+    ledger["open_diffs"] = []
+    ledger["fallback"] = {
+        "mode": "full_replay",
+        "replay_start_token": 0,
+        "reason": "Latest checkpoint is soft-only and has no restorable KV snapshot.",
+    }
+    write_json(store.ledger_path(args.thread), ledger)
+    print(f"wrote soft checkpoint: {capsule_id}")
+    return 0
+
+
+def update_ledger_for_capsule(
+    store: Store,
+    ledger: JSONDict,
+    capsule_id: str,
+    manifest_ref: str,
+    kind: str,
+    parent_capsule_id: str | None,
+    token_end: int,
+    endpoint_id: str,
+    fallback_mode: str,
+    fallback_reason: str,
+) -> None:
+    ledger["updated_at"] = now_iso()
+    ledger["active_capsule_id"] = capsule_id
+    ledger["capsules"].append(
+        {
+            "capsule_id": capsule_id,
+            "manifest_ref": manifest_ref,
+            "kind": kind,
+            "parent_capsule_id": parent_capsule_id,
+            "token_start": 0,
+            "token_end": token_end,
+            "endpoint_id": endpoint_id,
+            "status": "active",
+        }
+    )
+    for item in ledger["capsules"]:
+        if item["capsule_id"] != capsule_id and item.get("status") == "active":
+            item["status"] = "superseded"
+    ledger["open_diffs"] = []
+    ledger["fallback"] = {
+        "mode": fallback_mode,
+        "replay_start_token": token_end if fallback_mode == "replay_from_checkpoint" else 0,
+        "reason": fallback_reason,
+    }
+    write_json(store.ledger_path(ledger["thread_id"]), ledger)
+
+
+def snapshot_metadata(path: Path, save_response: JSONDict) -> tuple[int | None, str | None]:
+    if path.exists():
+        return path.stat().st_size, digest_file(path)
+    for key in ("n_written", "snapshot_bytes", "bytes"):
+        value = save_response.get(key)
+        if isinstance(value, int) and value >= 0:
+            return value, None
+    return None, None
+
+
+def create_hard_checkpoint(
+    store: Store,
+    thread_id: str,
+    slot_id: int,
+    capsule_id: str | None,
+    timeout: float,
+    runtime_filename: str | None,
+) -> str:
+    ledger = store.load_ledger(thread_id)
+    endpoint = store.load_endpoint(ledger["endpoint_id"])
+    if not endpoint.get("capabilities", {}).get("slot_save_restore", False):
+        raise RuntimeError("Endpoint does not advertise slot_save_restore. Run endpoint doctor or use --soft.")
+
+    rows = read_jsonl(store.transcript_path(thread_id))
+    token_end = transcript_or_capsule_token_end(rows, ledger)
+    capsule_id = capsule_id or f"cap_{datetime.now().strftime('%Y%m%d-%H%M%S')}"
+    snapshot_path = store.snapshots_dir(thread_id) / f"{capsule_id}.bin"
+    snapshot_path.parent.mkdir(parents=True, exist_ok=True)
+    runtime_snapshot_ref = runtime_filename or str(snapshot_path.resolve())
+
+    save_response, save_ms = slot_action(endpoint, slot_id, "save", runtime_snapshot_ref, timeout)
+    snapshot_bytes, snapshot_digest = snapshot_metadata(snapshot_path, save_response)
+    parent_capsule_id = ledger.get("active_capsule_id")
+    manifest_ref = (Path("threads") / thread_id / "manifests" / f"{capsule_id}.json").as_posix()
+
+    manifest: JSONDict = {
+        "schema_version": "0.1",
+        "capsule_id": capsule_id,
+        "thread_id": thread_id,
+        "kind": "thread_checkpoint",
+        "parent_capsule_id": parent_capsule_id,
+        "endpoint_id": endpoint["endpoint_id"],
+        "created_at": now_iso(),
+        "expires_at": None,
+        "compatibility": compatibility_from_endpoint(endpoint, token_end, "llama.cpp-slot-save-restore"),
+        "context": {
+            "token_start": 0,
+            "token_end": token_end,
+            "token_count": token_end,
+            "token_digest": context_digest(store, ledger, rows, parent_capsule_id),
+            "segments": build_checkpoint_segments(store, ledger, rows, parent_capsule_id),
+        },
+        "storage": {
+            "mode": "local_file",
+            "snapshot_ref": store.relative_ref(snapshot_path),
+            "runtime_snapshot_ref": runtime_snapshot_ref,
+            "snapshot_bytes": snapshot_bytes,
+            "snapshot_digest": snapshot_digest,
+        },
+        "security": {
+            "sealed": False,
+            "signature": None,
+            "encryption": None,
+        },
+        "notes": [
+            f"Hard checkpoint saved from slot {slot_id}.",
+            f"llama.cpp save client duration: {save_ms} ms.",
+        ],
+    }
+    write_json(store.manifests_dir(thread_id) / f"{capsule_id}.json", manifest)
+    update_ledger_for_capsule(
+        store,
+        ledger,
+        capsule_id,
+        manifest_ref,
+        "thread_checkpoint",
+        parent_capsule_id,
+        token_end,
+        endpoint["endpoint_id"],
+        "replay_from_checkpoint",
+        "Restore the hard capsule, then append transcript diffs after this checkpoint. If restore fails, replay the canonical transcript.",
+    )
+    return capsule_id
+
+
+def checkpoint_hard(args: argparse.Namespace) -> int:
+    capsule_id = create_hard_checkpoint(
+        Store(args.state_dir),
+        args.thread,
+        args.slot,
+        args.capsule_id,
+        args.timeout,
+        args.runtime_filename,
+    )
+    print(f"wrote hard checkpoint: {capsule_id}")
+    return 0
+
+
+def load_manifest_ref(store: Store, manifest_ref: str) -> JSONDict:
+    return read_json(store.root / manifest_ref)
+
+
+def find_latest_restorable_manifest(store: Store, ledger: JSONDict, capsule_id: str | None) -> tuple[JSONDict, JSONDict]:
+    links = ledger.get("capsules", [])
+    if capsule_id is not None:
+        links = [item for item in links if item["capsule_id"] == capsule_id]
+    else:
+        links = list(reversed(links))
+    for link in links:
+        manifest = load_manifest_ref(store, link["manifest_ref"])
+        if manifest.get("storage", {}).get("mode") != "soft":
+            return link, manifest
+    raise RuntimeError("No restorable hard capsule found for this thread")
+
+
+def assert_manifest_compatible(manifest: JSONDict, endpoint: JSONDict) -> None:
+    if manifest["endpoint_id"] != endpoint["endpoint_id"]:
+        raise RuntimeError("Capsule endpoint_id does not match thread endpoint")
+    compatibility = manifest["compatibility"]
+    runtime = endpoint["runtime"]
+    checks = [
+        ("model_hash", compatibility["model_hash"], runtime["model_hash"]),
+        ("tokenizer_hash", compatibility["tokenizer_hash"], runtime["tokenizer_hash"]),
+    ]
+    for label, left, right in checks:
+        if left != "unknown" and right != "unknown" and left != right:
+            raise RuntimeError(f"Capsule {label} mismatch: {left} != {right}")
+    if compatibility["context_limit"] > runtime["context_limit"]:
+        raise RuntimeError("Capsule context_limit exceeds endpoint context_limit")
+
+
+def diff_messages_after(rows: list[JSONDict], token_end: int) -> list[JSONDict]:
+    messages: list[JSONDict] = []
+    for row in rows:
+        if int(row.get("token_end", 0)) <= token_end:
+            continue
+        messages.append({"role": row["role"], "content": row["content"]})
+    return messages
+
+
+def resume_thread(args: argparse.Namespace) -> int:
+    store = Store(args.state_dir)
+    ledger = store.load_ledger(args.thread)
+    endpoint = store.load_endpoint(ledger["endpoint_id"])
+    link, manifest = find_latest_restorable_manifest(store, ledger, args.capsule_id)
+    assert_manifest_compatible(manifest, endpoint)
+
+    storage = manifest["storage"]
+    runtime_snapshot_ref = storage.get("runtime_snapshot_ref") or storage.get("snapshot_ref")
+    if not runtime_snapshot_ref:
+        raise RuntimeError("Capsule has no runtime snapshot reference")
+
+    restore_response, restore_ms = slot_action(endpoint, args.slot, "restore", runtime_snapshot_ref, args.timeout)
+    print(f"restored {link['capsule_id']} into slot {args.slot} ({restore_ms} ms)")
+
+    if args.append_diff:
+        rows = read_jsonl(store.transcript_path(args.thread))
+        messages = diff_messages_after(rows, int(manifest["context"]["token_end"]))
+        if messages:
+            response, completion_ms = chat_completion(
+                endpoint,
+                args.slot,
+                messages,
+                args.max_tokens,
+                args.temperature,
+                args.timeout,
+                args.chat_path,
+            )
+            print(f"appended {len(messages)} diff messages ({completion_ms} ms)")
+            finish_reason = response.get("choices", [{}])[0].get("finish_reason") if isinstance(response.get("choices"), list) else None
+            if finish_reason:
+                print(f"finish_reason: {finish_reason}")
+        else:
+            print("no transcript diff to append")
+    else:
+        open_diffs = ledger.get("open_diffs", [])
+        if open_diffs:
+            diff = open_diffs[0]
+            print(f"pending diff tokens: {diff['token_start']}..{diff['token_end']} (use --append-diff)")
+
+    if restore_response:
+        detail = restore_response.get("timings") or restore_response
+        print(f"restore response: {json.dumps(detail, sort_keys=True)}")
+    return 0
+
+
+def shutdown_thread(args: argparse.Namespace) -> int:
+    store = Store(args.state_dir)
+    ledger = store.load_ledger(args.thread)
+    if not ledger.get("open_diffs") and not args.force:
+        print("no open diff recorded; use --force to checkpoint anyway")
+        return 0
+    capsule_id = create_hard_checkpoint(
+        store,
+        args.thread,
+        args.slot,
+        args.capsule_id or f"shutdown_{datetime.now().strftime('%Y%m%d-%H%M%S')}",
+        args.timeout,
+        args.runtime_filename,
+    )
+    print(f"saved shutdown checkpoint: {capsule_id}")
+    return 0
+
+
+def safe_zip_name(path: str) -> str:
+    normalized = Path(path.replace("\\", "/"))
+    if normalized.is_absolute() or ".." in normalized.parts:
+        raise RuntimeError(f"Unsafe bundle path: {path}")
+    return normalized.as_posix()
+
+
+def add_text_to_zip(bundle: zipfile.ZipFile, name: str, content: str) -> None:
+    bundle.writestr(safe_zip_name(name), content)
+
+
+def add_file_to_zip(bundle: zipfile.ZipFile, source: Path, arcname: str) -> bool:
+    if not source.exists() or not source.is_file():
+        return False
+    bundle.write(source, safe_zip_name(arcname))
+    return True
+
+
+def export_bundle(args: argparse.Namespace) -> int:
+    store = Store(args.state_dir)
+    ledger = store.load_ledger(args.thread)
+    out_path = args.out.resolve()
+    if out_path.exists() and not args.force:
+        raise FileExistsError(f"Bundle already exists: {out_path}")
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+
+    transcript_path = store.transcript_path(args.thread)
+    transcript_content = transcript_path.read_text(encoding="utf-8") if transcript_path.exists() else ""
+    if args.redact_transcript:
+        transcript_content = ""
+
+    capsule_index: list[JSONDict] = []
+    omitted_snapshots: list[str] = []
+    included_files: list[str] = []
+
+    bundle_manifest: JSONDict = {
+        "schema_version": "0.1",
+        "bundle_type": "session-capsules.scap",
+        "created_at": now_iso(),
+        "thread_id": args.thread,
+        "export_mode": "with-local-snapshots" if args.include_snapshots else "ledger-only",
+        "redacted_transcript": args.redact_transcript,
+        "includes_snapshots": args.include_snapshots,
+        "notes": [
+            "Model weights are never included in .scap bundles.",
+            "Hard snapshots are included only when includes_snapshots is true.",
+        ],
+    }
+
+    with zipfile.ZipFile(out_path, "w", compression=zipfile.ZIP_DEFLATED) as bundle:
+        add_text_to_zip(bundle, "thread-ledger.json", json.dumps(ledger, indent=2) + "\n")
+        add_text_to_zip(bundle, "transcript.jsonl", transcript_content)
+
+        state_ledger_ref = f"threads/{args.thread}/thread-ledger.json"
+        add_text_to_zip(bundle, state_ledger_ref, json.dumps(ledger, indent=2) + "\n")
+        included_files.append(state_ledger_ref)
+
+        state_transcript_ref = ledger["transcript_ref"]
+        add_text_to_zip(bundle, state_transcript_ref, transcript_content)
+        included_files.append(state_transcript_ref)
+
+        endpoint_ref = f"endpoints/{ledger['endpoint_id']}.json"
+        endpoint_path = store.root / endpoint_ref
+        if add_file_to_zip(bundle, endpoint_path, endpoint_ref):
+            included_files.append(endpoint_ref)
+
+        for link in ledger.get("capsules", []):
+            manifest_ref = link["manifest_ref"]
+            manifest_path = store.root / manifest_ref
+            if not manifest_path.exists():
+                capsule_index.append({**link, "included_manifest": False})
+                continue
+            manifest = read_json(manifest_path)
+            add_file_to_zip(bundle, manifest_path, manifest_ref)
+            included_files.append(manifest_ref)
+
+            prefill_source = manifest.get("prefill_source")
+            if prefill_source and not args.redact_transcript:
+                source_ref = prefill_source.get("source_ref")
+                if source_ref and add_file_to_zip(bundle, store.root / source_ref, source_ref):
+                    included_files.append(source_ref)
+
+            snapshot_included = False
+            snapshot_ref = manifest.get("storage", {}).get("snapshot_ref")
+            if snapshot_ref:
+                if args.include_snapshots:
+                    snapshot_included = add_file_to_zip(bundle, store.root / snapshot_ref, snapshot_ref)
+                    if snapshot_included:
+                        included_files.append(snapshot_ref)
+                else:
+                    omitted_snapshots.append(snapshot_ref)
+
+            capsule_index.append(
+                {
+                    **link,
+                    "included_manifest": True,
+                    "included_snapshot": snapshot_included,
+                    "snapshot_ref": snapshot_ref,
+                }
+            )
+
+        add_text_to_zip(bundle, "capsule-index.json", json.dumps(capsule_index, indent=2) + "\n")
+
+    bundle_manifest["included_files"] = sorted(set(included_files))
+    bundle_manifest["omitted_snapshots"] = sorted(set(omitted_snapshots))
+    with zipfile.ZipFile(out_path, "a", compression=zipfile.ZIP_DEFLATED) as bundle:
+        add_text_to_zip(bundle, "manifest.json", json.dumps(bundle_manifest, indent=2) + "\n")
+
+    print(f"exported bundle: {out_path}")
+    print(f"thread: {args.thread}")
+    print(f"snapshots included: {args.include_snapshots}")
+    if omitted_snapshots:
+        print(f"omitted snapshots: {len(omitted_snapshots)}")
+    return 0
+
+
+def import_bundle(args: argparse.Namespace) -> int:
+    store = Store(args.state_dir)
+    bundle_path = args.bundle.resolve()
+    if not bundle_path.exists():
+        raise FileNotFoundError(f"Bundle not found: {bundle_path}")
+
+    with zipfile.ZipFile(bundle_path, "r") as bundle:
+        bundle_manifest = json.loads(bundle.read("manifest.json").decode("utf-8"))
+        thread_id = args.thread_id or bundle_manifest["thread_id"]
+        if args.thread_id is not None and args.thread_id != bundle_manifest["thread_id"]:
+            raise RuntimeError("Import thread-id override is not implemented yet because manifest refs are path-bound")
+        target_ledger = store.ledger_path(thread_id)
+        if target_ledger.exists() and not args.force:
+            raise FileExistsError(f"Thread already exists: {thread_id}")
+
+        extracted = 0
+        for item in bundle.infolist():
+            name = safe_zip_name(item.filename)
+            if not (name.startswith("endpoints/") or name.startswith("prefills/") or name.startswith("threads/")):
+                continue
+            parts = Path(name).parts
+            if parts[0] == "threads" and len(parts) > 1 and parts[1] != bundle_manifest["thread_id"]:
+                raise RuntimeError(f"Unexpected thread path in bundle: {name}")
+            target = store.root / name
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(bundle.read(item.filename))
+            extracted += 1
+
+    print(f"imported bundle: {bundle_path}")
+    print(f"thread: {thread_id}")
+    print(f"files: {extracted}")
+    if bundle_manifest.get("omitted_snapshots"):
+        print(f"warning: omitted snapshots: {len(bundle_manifest['omitted_snapshots'])}")
+    if bundle_manifest.get("redacted_transcript"):
+        print("warning: transcript was redacted in this bundle")
+    return 0
+
+
+def require_job_param(params: JSONDict, key: str) -> Any:
+    if key not in params:
+        raise RuntimeError(f"Job params missing required key: {key}")
+    return params[key]
+
+
+def job_path(base: Path, value: str) -> Path:
+    path = Path(value)
+    if path.is_absolute():
+        return path
+    return base / path
+
+
+def validate_job_packet(packet: JSONDict) -> None:
+    required = ["schema_version", "job_id", "job_type", "created_at", "params"]
+    for key in required:
+        if key not in packet:
+            raise RuntimeError(f"Job packet missing required key: {key}")
+    if packet["schema_version"] != "0.1":
+        raise RuntimeError("Job packet schema_version must be 0.1")
+    if packet["job_type"] not in {"resume_thread", "checkpoint_thread", "export_thread", "validate_capsule"}:
+        raise RuntimeError(f"Unsupported job_type: {packet['job_type']}")
+    if not isinstance(packet["params"], dict):
+        raise RuntimeError("Job packet params must be an object")
+
+
+def print_job_plan(packet: JSONDict) -> None:
+    print(f"job: {packet['job_id']}")
+    print(f"type: {packet['job_type']}")
+    params = packet["params"]
+    for key in sorted(params):
+        print(f"  {key}: {params[key]}")
+
+
+def validate_capsule_job(store: Store, params: JSONDict) -> int:
+    thread_id = str(require_job_param(params, "thread_id"))
+    ledger = store.load_ledger(thread_id)
+    capsule_id = params.get("capsule_id") or ledger.get("active_capsule_id")
+    if capsule_id is None:
+        raise RuntimeError(f"Thread has no active capsule: {thread_id}")
+    link = find_capsule_link(ledger, str(capsule_id))
+    if link is None:
+        raise RuntimeError(f"Capsule not found in thread ledger: {capsule_id}")
+
+    manifest = load_manifest_ref(store, link["manifest_ref"])
+    endpoint_id = str(params.get("endpoint_id") or ledger["endpoint_id"])
+    endpoint = store.load_endpoint(endpoint_id)
+    assert_manifest_compatible(manifest, endpoint)
+
+    storage = manifest.get("storage", {})
+    snapshot_ref = storage.get("snapshot_ref")
+    snapshot_exists = None
+    if snapshot_ref:
+        snapshot_exists = (store.root / snapshot_ref).exists()
+
+    print(f"thread: {thread_id}")
+    print(f"capsule: {capsule_id}")
+    print(f"endpoint: {endpoint_id}")
+    print("compatible: yes")
+    print(f"storage mode: {storage.get('mode')}")
+    if snapshot_ref:
+        print(f"snapshot: {snapshot_ref}")
+        print(f"snapshot exists: {'yes' if snapshot_exists else 'no'}")
+    if params.get("require_snapshot") and snapshot_ref and not snapshot_exists:
+        return 1
+    return 0
+
+
+def run_job_packet(args: argparse.Namespace) -> int:
+    job_file = args.job.resolve()
+    packet = read_json(job_file)
+    validate_job_packet(packet)
+    if args.dry_run or packet.get("dry_run"):
+        print_job_plan(packet)
+        return 0
+
+    params = packet["params"]
+    job_type = packet["job_type"]
+    store = Store(args.state_dir)
+
+    if job_type == "resume_thread":
+        resume_args = argparse.Namespace(
+            state_dir=args.state_dir,
+            thread=str(require_job_param(params, "thread_id")),
+            slot=int(params.get("slot", 0)),
+            capsule_id=params.get("capsule_id"),
+            append_diff=bool(params.get("append_diff", False)),
+            chat_path=str(params.get("chat_path", "/v1/chat/completions")),
+            max_tokens=int(params.get("max_tokens", 0)),
+            temperature=float(params.get("temperature", 0.0)),
+            timeout=float(params.get("timeout", 120.0)),
+        )
+        return resume_thread(resume_args)
+
+    if job_type == "checkpoint_thread":
+        mode = str(params.get("mode", "soft"))
+        checkpoint_args = argparse.Namespace(
+            state_dir=args.state_dir,
+            thread=str(require_job_param(params, "thread_id")),
+            slot=int(params.get("slot", 0)),
+            capsule_id=params.get("capsule_id"),
+            runtime_filename=params.get("runtime_filename"),
+            timeout=float(params.get("timeout", 120.0)),
+        )
+        if mode == "hard":
+            return checkpoint_hard(checkpoint_args)
+        if mode == "soft":
+            return checkpoint_soft(checkpoint_args)
+        raise RuntimeError("checkpoint_thread mode must be soft or hard")
+
+    if job_type == "export_thread":
+        export_args = argparse.Namespace(
+            state_dir=args.state_dir,
+            thread=str(require_job_param(params, "thread_id")),
+            out=job_path(job_file.parent, str(require_job_param(params, "out"))),
+            include_snapshots=bool(params.get("include_snapshots", False)),
+            redact_transcript=bool(params.get("redact_transcript", False)),
+            force=bool(params.get("force", False)),
+        )
+        return export_bundle(export_args)
+
+    if job_type == "validate_capsule":
+        return validate_capsule_job(store, params)
+
+    raise RuntimeError(f"Unsupported job_type: {job_type}")
+
+
+def inspect(args: argparse.Namespace) -> int:
+    store = Store(args.state_dir)
+    if args.thread:
+        ledger = store.load_ledger(args.thread)
+        rows = read_jsonl(store.transcript_path(args.thread))
+        print(f"thread: {ledger['thread_id']}")
+        print(f"display: {ledger.get('display_name', '')}")
+        print(f"endpoint: {ledger['endpoint_id']}")
+        print(f"messages: {len(rows)}")
+        print(f"active capsule: {ledger.get('active_capsule_id')}")
+        print(f"capsules: {len(ledger.get('capsules', []))}")
+        print(f"open diffs: {len(ledger.get('open_diffs', []))}")
+        print(f"fallback: {ledger['fallback']['mode']} from token {ledger['fallback']['replay_start_token']}")
+        return 0
+
+    endpoints = sorted(store.endpoints_dir.glob("*.json")) if store.endpoints_dir.exists() else []
+    threads = sorted(store.threads_dir.glob("*/thread-ledger.json")) if store.threads_dir.exists() else []
+    print(f"state dir: {store.root}")
+    print(f"endpoints: {len(endpoints)}")
+    for path in endpoints:
+        endpoint = read_json(path)
+        print(f"  {endpoint['endpoint_id']} ({endpoint['type']}) -> {endpoint['base_url']}")
+    print(f"threads: {len(threads)}")
+    for path in threads:
+        ledger = read_json(path)
+        print(f"  {ledger['thread_id']} active={ledger.get('active_capsule_id')}")
+    return 0
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(description="Manage Session Capsule ledgers and soft checkpoints.")
+    parser.add_argument("--state-dir", type=Path, default=Path(".capsules"))
+    subcommands = parser.add_subparsers(dest="command", required=True)
+
+    endpoint = subcommands.add_parser("endpoint")
+    endpoint_sub = endpoint.add_subparsers(dest="endpoint_command", required=True)
+
+    add = endpoint_sub.add_parser("add")
+    add.add_argument("endpoint_id")
+    add.add_argument("--type", choices=["llamacpp", "ollama", "vllm", "openai_compatible", "hosted"], required=True)
+    add.add_argument("--base-url", required=True)
+    add.add_argument("--runtime-name", default="")
+    add.add_argument("--runtime-build", default="unknown")
+    add.add_argument("--model-ref", default="unknown")
+    add.add_argument("--model-hash", default="unknown")
+    add.add_argument("--tokenizer-hash", default="unknown")
+    add.add_argument("--context-limit", type=int, default=131072)
+    add.add_argument("--slot-field", default="id_slot")
+    add.add_argument("--slot-save-restore", action="store_true")
+    add.add_argument("--force", action="store_true")
+    add.set_defaults(func=endpoint_add)
+
+    doctor = endpoint_sub.add_parser("doctor")
+    doctor.add_argument("endpoint_id")
+    doctor.add_argument("--timeout", type=float, default=2.0)
+    doctor.add_argument("--strict", action="store_true")
+    doctor.set_defaults(func=endpoint_doctor)
+
+    thread = subcommands.add_parser("thread")
+    thread_sub = thread.add_subparsers(dest="thread_command", required=True)
+
+    start = thread_sub.add_parser("start")
+    start.add_argument("--endpoint", required=True)
+    start.add_argument("--name", required=True)
+    start.add_argument("--thread-id")
+    start.add_argument("--workspace")
+    start.add_argument("--prefill", help="Named prefill capsule to attach as the thread root.")
+    start.add_argument("--prefill-version", help="Specific prefill version. Defaults to active version.")
+    start.add_argument("--force", action="store_true")
+    start.set_defaults(func=thread_start)
+
+    append = thread_sub.add_parser("append")
+    append.add_argument("--thread", required=True)
+    append.add_argument("--role", choices=["system", "user", "assistant", "tool"], default="user")
+    append.add_argument("--content")
+    append.add_argument("--file")
+    append.set_defaults(func=thread_append)
+
+    checkpoint = subcommands.add_parser("checkpoint")
+    checkpoint.add_argument("--thread", required=True)
+    checkpoint.add_argument("--soft", action="store_true", help="Create a transcript-only checkpoint.")
+    checkpoint.add_argument("--hard", action="store_true", help="Save a runtime slot snapshot as a hard checkpoint.")
+    checkpoint.add_argument("--slot", type=int, default=0, help="Runtime slot to save when using --hard.")
+    checkpoint.add_argument("--capsule-id")
+    checkpoint.add_argument("--runtime-filename", help="Server-visible filename to pass to the slot save API.")
+    checkpoint.add_argument("--timeout", type=float, default=120.0)
+    checkpoint.set_defaults(func=None)
+
+    resume = subcommands.add_parser("resume")
+    resume.add_argument("--thread", required=True)
+    resume.add_argument("--slot", type=int, default=0)
+    resume.add_argument("--capsule-id")
+    resume.add_argument("--append-diff", action="store_true")
+    resume.add_argument("--chat-path", default="/v1/chat/completions")
+    resume.add_argument("--max-tokens", type=int, default=0)
+    resume.add_argument("--temperature", type=float, default=0.0)
+    resume.add_argument("--timeout", type=float, default=120.0)
+    resume.set_defaults(func=resume_thread)
+
+    shutdown = subcommands.add_parser("shutdown")
+    shutdown.add_argument("--thread", required=True)
+    shutdown.add_argument("--slot", type=int, default=0)
+    shutdown.add_argument("--capsule-id")
+    shutdown.add_argument("--runtime-filename", help="Server-visible filename to pass to the slot save API.")
+    shutdown.add_argument("--timeout", type=float, default=120.0)
+    shutdown.add_argument("--force", action="store_true")
+    shutdown.set_defaults(func=shutdown_thread)
+
+    export = subcommands.add_parser("export")
+    export.add_argument("--thread", required=True)
+    export.add_argument("--out", type=Path, required=True)
+    export.add_argument("--include-snapshots", action="store_true")
+    export.add_argument("--redact-transcript", action="store_true")
+    export.add_argument("--force", action="store_true")
+    export.set_defaults(func=export_bundle)
+
+    import_cmd = subcommands.add_parser("import")
+    import_cmd.add_argument("bundle", type=Path)
+    import_cmd.add_argument("--thread-id")
+    import_cmd.add_argument("--force", action="store_true")
+    import_cmd.set_defaults(func=import_bundle)
+
+    job = subcommands.add_parser("job")
+    job_sub = job.add_subparsers(dest="job_command", required=True)
+
+    job_run = job_sub.add_parser("run")
+    job_run.add_argument("job", type=Path)
+    job_run.add_argument("--dry-run", action="store_true")
+    job_run.set_defaults(func=run_job_packet)
+
+    prefill = subcommands.add_parser("prefill")
+    prefill_sub = prefill.add_subparsers(dest="prefill_command", required=True)
+
+    prefill_create_parser = prefill_sub.add_parser("create")
+    prefill_create_parser.add_argument("--endpoint", required=True)
+    prefill_create_parser.add_argument("--name", required=True)
+    prefill_create_parser.add_argument("--kind", choices=["user_prefill", "project_prefill"], default="user_prefill")
+    prefill_create_parser.add_argument("--input")
+    prefill_create_parser.add_argument("--content")
+    prefill_create_parser.add_argument("--version")
+    prefill_create_parser.add_argument("--role", default="system")
+    prefill_create_parser.add_argument("--soft", action="store_true", help="Create a source-only prefill manifest.")
+    prefill_create_parser.add_argument("--hard", action="store_true", help="Compile source into a runtime slot and save it.")
+    prefill_create_parser.add_argument("--slot", type=int, default=0)
+    prefill_create_parser.add_argument("--runtime-filename", help="Server-visible filename to pass to the slot save API.")
+    prefill_create_parser.add_argument("--chat-path", default="/v1/chat/completions")
+    prefill_create_parser.add_argument("--temperature", type=float, default=0.0)
+    prefill_create_parser.add_argument("--timeout", type=float, default=120.0)
+    prefill_create_parser.add_argument("--force", action="store_true")
+    prefill_create_parser.set_defaults(func=prefill_create)
+
+    prefill_list_parser = prefill_sub.add_parser("list")
+    prefill_list_parser.add_argument("--verbose", action="store_true")
+    prefill_list_parser.set_defaults(func=prefill_list)
+
+    prefill_diff_parser = prefill_sub.add_parser("diff")
+    prefill_diff_parser.add_argument("--name", required=True)
+    prefill_diff_parser.add_argument("--version")
+    prefill_diff_parser.add_argument("--input")
+    prefill_diff_parser.add_argument("--content")
+    prefill_diff_parser.add_argument("--strict", action="store_true")
+    prefill_diff_parser.set_defaults(func=prefill_diff)
+
+    inspect_cmd = subcommands.add_parser("inspect")
+    inspect_cmd.add_argument("--thread")
+    inspect_cmd.set_defaults(func=inspect)
+
+    return parser
+
+
+def main() -> int:
+    parser = build_parser()
+    args = parser.parse_args()
+    args.state_dir = args.state_dir.resolve()
+    try:
+        if getattr(args, "command", "") == "prefill" and getattr(args, "prefill_command", "") == "create":
+            if args.soft and args.hard:
+                print("Choose at most one prefill mode: --soft or --hard.", file=sys.stderr)
+                return 2
+        if getattr(args, "command", "") == "checkpoint":
+            if args.soft == args.hard:
+                print("Choose exactly one checkpoint mode: --soft or --hard.", file=sys.stderr)
+                return 2
+            if args.hard:
+                return checkpoint_hard(args)
+            return checkpoint_soft(args)
+        return int(args.func(args))
+    except Exception as exc:  # noqa: BLE001 - CLI should produce concise errors.
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

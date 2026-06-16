@@ -1,0 +1,250 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.local/session-capsules/schemas/capsule-manifest.schema.json",
+  "title": "Session Capsule Manifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "capsule_id",
+    "thread_id",
+    "kind",
+    "endpoint_id",
+    "compatibility",
+    "context",
+    "storage",
+    "created_at"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "0.1"
+    },
+    "capsule_id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_.:-]+$"
+    },
+    "thread_id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_.:-]+$"
+    },
+    "kind": {
+      "type": "string",
+      "enum": [
+        "soft_checkpoint",
+        "user_prefill",
+        "project_prefill",
+        "thread_checkpoint",
+        "branch_checkpoint"
+      ]
+    },
+    "parent_capsule_id": {
+      "type": ["string", "null"],
+      "pattern": "^[A-Za-z0-9_.:-]+$"
+    },
+    "endpoint_id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_.:-]+$"
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "expires_at": {
+      "type": ["string", "null"],
+      "format": "date-time"
+    },
+    "compatibility": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "runtime",
+        "runtime_build",
+        "model_ref",
+        "model_hash",
+        "tokenizer_hash",
+        "context_limit",
+        "slot_format"
+      ],
+      "properties": {
+        "runtime": {
+          "type": "string",
+          "examples": ["llama.cpp"]
+        },
+        "runtime_build": {
+          "type": "string"
+        },
+        "model_ref": {
+          "type": "string"
+        },
+        "model_hash": {
+          "type": "string"
+        },
+        "tokenizer_hash": {
+          "type": "string"
+        },
+        "context_limit": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "slot_format": {
+          "type": "string"
+        }
+      }
+    },
+    "context": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "token_start",
+        "token_end",
+        "token_count",
+        "token_digest",
+        "segments"
+      ],
+      "properties": {
+        "token_start": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "token_end": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "token_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "token_digest": {
+          "type": "string"
+        },
+        "segments": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/segment"
+          }
+        }
+      }
+    },
+    "prefill_source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "version",
+        "source_ref",
+        "source_digest"
+      ],
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "version": {
+          "type": "string"
+        },
+        "source_ref": {
+          "type": "string"
+        },
+        "source_digest": {
+          "type": "string"
+        }
+      }
+    },
+    "storage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "mode",
+        "snapshot_ref"
+      ],
+      "properties": {
+        "mode": {
+          "type": "string",
+          "enum": [
+            "soft",
+            "server_side_handle",
+            "local_file",
+            "scap_bundle"
+          ]
+        },
+        "snapshot_ref": {
+          "type": ["string", "null"]
+        },
+        "runtime_snapshot_ref": {
+          "type": ["string", "null"]
+        },
+        "snapshot_bytes": {
+          "type": ["integer", "null"],
+          "minimum": 0
+        },
+        "snapshot_digest": {
+          "type": ["string", "null"]
+        }
+      }
+    },
+    "security": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "sealed": {
+          "type": "boolean"
+        },
+        "signature": {
+          "type": ["string", "null"]
+        },
+        "encryption": {
+          "type": ["string", "null"]
+        }
+      }
+    },
+    "notes": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "$defs": {
+    "segment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "segment_id",
+        "source",
+        "role",
+        "token_start",
+        "token_end"
+      ],
+      "properties": {
+        "segment_id": {
+          "type": "string"
+        },
+        "source": {
+          "type": "string",
+          "enum": [
+            "system",
+            "user",
+            "assistant",
+            "tool",
+            "prefill",
+            "metadata"
+          ]
+        },
+        "role": {
+          "type": "string"
+        },
+        "token_start": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "token_end": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "digest": {
+          "type": ["string", "null"]
+        }
+      }
+    }
+  }
+}

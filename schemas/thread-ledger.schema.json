@@ -1,0 +1,174 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.local/session-capsules/schemas/thread-ledger.schema.json",
+  "title": "Session Capsule Thread Ledger",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "thread_id",
+    "created_at",
+    "updated_at",
+    "endpoint_id",
+    "transcript_ref",
+    "active_capsule_id",
+    "capsules",
+    "fallback"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "0.1"
+    },
+    "thread_id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_.:-]+$"
+    },
+    "display_name": {
+      "type": "string"
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "updated_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "endpoint_id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_.:-]+$"
+    },
+    "workspace_ref": {
+      "type": ["string", "null"]
+    },
+    "transcript_ref": {
+      "type": "string"
+    },
+    "active_capsule_id": {
+      "type": ["string", "null"],
+      "pattern": "^[A-Za-z0-9_.:-]+$"
+    },
+    "capsules": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/capsule_link"
+      }
+    },
+    "open_diffs": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/diff_range"
+      }
+    },
+    "fallback": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "mode",
+        "replay_start_token",
+        "reason"
+      ],
+      "properties": {
+        "mode": {
+          "type": "string",
+          "enum": [
+            "full_replay",
+            "replay_from_checkpoint",
+            "soft_only"
+          ]
+        },
+        "replay_start_token": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "reason": {
+          "type": "string"
+        }
+      }
+    },
+    "notes": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "$defs": {
+    "capsule_link": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "capsule_id",
+        "manifest_ref",
+        "kind",
+        "parent_capsule_id",
+        "token_start",
+        "token_end",
+        "endpoint_id"
+      ],
+      "properties": {
+        "capsule_id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_.:-]+$"
+        },
+        "manifest_ref": {
+          "type": "string"
+        },
+        "kind": {
+          "type": "string"
+        },
+        "parent_capsule_id": {
+          "type": ["string", "null"],
+          "pattern": "^[A-Za-z0-9_.:-]+$"
+        },
+        "token_start": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "token_end": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "endpoint_id": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "active",
+            "superseded",
+            "invalid",
+            "missing"
+          ]
+        }
+      }
+    },
+    "diff_range": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "after_capsule_id",
+        "token_start",
+        "token_end",
+        "transcript_ref"
+      ],
+      "properties": {
+        "after_capsule_id": {
+          "type": ["string", "null"]
+        },
+        "token_start": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "token_end": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "transcript_ref": {
+          "type": "string"
+        }
+      }
+    }
+  }
+}

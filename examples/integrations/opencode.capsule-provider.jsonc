@@ -1,0 +1,24 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "provider": {
+    "session-capsules": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "Session Capsules",
+      "options": {
+        "baseURL": "http://127.0.0.1:8765/v1",
+        "apiKey": "sk-capsule-local",
+        "headers": {
+          "X-Capsule-Workspace": "{env:CAPSULE_WORKSPACE}",
+          "X-Capsule-Prefill": "{env:CAPSULE_PREFILL}",
+          "X-Capsule-Thread": "{env:CAPSULE_THREAD}"
+        }
+      },
+      "models": {
+        "fake-model": {
+          "name": "Capsule Gateway Model"
+        }
+      }
+    }
+  },
+  "model": "session-capsules/fake-model"
+}

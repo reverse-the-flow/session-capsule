@@ -1,0 +1,61 @@
+{
+  "scenario_name": "research_loop_small",
+  "origin": "hand-authored example scenario for the session-capsules MVP benchmark harness",
+  "why": "Provide a deterministic, inspectable transcript-growth pattern for replay versus restore measurements without relying on hidden conversation state.",
+  "messages": [
+    {
+      "role": "system",
+      "content": "You are a concise assistant helping benchmark replay versus session-capsule restore behavior."
+    },
+    {
+      "role": "user",
+      "content": "Initial packet: inspect the repository, preserve provenance, and keep the benchmark design regime-stable."
+    }
+  ],
+  "step_deltas": [
+    [
+      {
+        "role": "assistant",
+        "content": "I will track every measurement with explicit provenance and note any ambiguity instead of smoothing it over."
+      },
+      {
+        "role": "user",
+        "content": "Repository map: docs/whitepaper.md, docs/benchmark-design.md, scripts/simulate_capsules.py, and scripts/llama_slot_workflow.ps1 are the starting materials."
+      }
+    ],
+    [
+      {
+        "role": "assistant",
+        "content": "I will treat the simulator as theory only and use the runtime benchmark for empirical evidence."
+      },
+      {
+        "role": "user",
+        "content": "Benchmark rule: do not mix fully-in-VRAM and spill regimes in the same series, and reject runs that drift across the boundary."
+      }
+    ],
+    [
+      {
+        "role": "assistant",
+        "content": "I will separate controller responsibilities from llama.cpp runtime responsibilities and keep the capsule format runtime-specific for the MVP."
+      },
+      {
+        "role": "user",
+        "content": "Slot workflow: save after each validated prompt boundary, restore into a clean slot, then measure the next full transcript request with cache reuse enabled."
+      }
+    ],
+    [
+      {
+        "role": "assistant",
+        "content": "I will compare replay, restore, and save costs separately before claiming a combined win."
+      },
+      {
+        "role": "user",
+        "content": "Handoff note: write outputs so another model can continue from the run folder without needing hidden chat context."
+      }
+    ]
+  ],
+  "ambiguity_notes": [
+    "This is a synthetic transcript-growth scenario for systems benchmarking, not a quality benchmark for answer semantics.",
+    "The scenario assumes prompt-only evaluation is acceptable for the first MVP so slot state matches the canonical transcript exactly."
+  ]
+}
