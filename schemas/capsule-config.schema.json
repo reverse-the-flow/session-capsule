@@ -1,0 +1,51 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.local/session-capsules/schemas/capsule-config.schema.json",
+  "title": "Session Capsule Local Configuration",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "storage"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "0.1"
+    },
+    "storage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "max_bytes",
+        "min_free_bytes",
+        "prune_policy",
+        "keep_latest_per_thread",
+        "protect_active_prefills"
+      ],
+      "properties": {
+        "max_bytes": {
+          "type": "string",
+          "pattern": "^\\d+(\\.\\d+)?\\s*([KMGT]i?B|[KMGT]B|B)?$"
+        },
+        "min_free_bytes": {
+          "type": "string",
+          "pattern": "^\\d+(\\.\\d+)?\\s*([KMGT]i?B|[KMGT]B|B)?$"
+        },
+        "prune_policy": {
+          "type": "string",
+          "enum": [
+            "oldest_unpinned_first"
+          ]
+        },
+        "keep_latest_per_thread": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "protect_active_prefills": {
+          "type": "boolean"
+        }
+      }
+    }
+  }
+}

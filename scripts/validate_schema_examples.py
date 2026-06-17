@@ -9,6 +9,7 @@ adds a full schema validator.
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 from typing import Any
 
@@ -43,6 +44,7 @@ def require_bool(name: str, value: Any) -> None:
 def validate_schema_files() -> None:
     expected = [
         "capsule-manifest.schema.json",
+        "capsule-config.schema.json",
         "thread-ledger.schema.json",
         "endpoint-capabilities.schema.json",
         "model-plane-job.schema.json",
@@ -186,6 +188,34 @@ def validate_thread(data: dict[str, Any], capsule: dict[str, Any], endpoint: dic
         raise ValidationError("fallback replay_start_token must not precede active capsule token_end")
 
 
+def validate_config(data: dict[str, Any]) -> None:
+    require_keys("config", data, ["schema_version", "storage"])
+    if data["schema_version"] != "0.1":
+        raise ValidationError("config schema_version must be 0.1")
+    storage = data["storage"]
+    if not isinstance(storage, dict):
+        raise ValidationError("config.storage must be an object")
+    require_keys(
+        "config.storage",
+        storage,
+        [
+            "max_bytes",
+            "min_free_bytes",
+            "prune_policy",
+            "keep_latest_per_thread",
+            "protect_active_prefills",
+        ],
+    )
+    for key in ["max_bytes", "min_free_bytes"]:
+        if not isinstance(storage[key], str) or not re.fullmatch(r"\d+(\.\d+)?\s*([KMGT]i?B|[KMGT]B|B)?", storage[key]):
+            raise ValidationError(f"config.storage.{key} must be a byte size string")
+    if storage["prune_policy"] != "oldest_unpinned_first":
+        raise ValidationError("config.storage.prune_policy must be oldest_unpinned_first")
+    if not isinstance(storage["keep_latest_per_thread"], int) or storage["keep_latest_per_thread"] < 0:
+        raise ValidationError("config.storage.keep_latest_per_thread must be a nonnegative integer")
+    require_bool("config.storage.protect_active_prefills", storage["protect_active_prefills"])
+
+
 def require_nonnegative_int(name: str, value: Any) -> None:
     if not isinstance(value, int) or value < 0:
         raise ValidationError(f"{name} must be a nonnegative integer")
@@ -242,11 +272,13 @@ def main() -> None:
     validate_schema_files()
 
     endpoint = load_json(EXAMPLES / "endpoint-capabilities.example.json")
+    config = load_json(EXAMPLES / "capsule-config.example.json")
     capsule = load_json(EXAMPLES / "capsule-manifest.example.json")
     prefill = load_json(EXAMPLES / "prefill-manifest.example.json")
     thread = load_json(EXAMPLES / "thread-ledger.example.json")
 
     validate_endpoint(endpoint)
+    validate_config(config)
     validate_capsule(capsule, endpoint)
     validate_capsule(prefill, endpoint)
     if "prefill_source" not in prefill:

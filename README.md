@@ -45,6 +45,7 @@ That matters most for:
 
 - [docs/whitepaper.md](/X:/Experiments/session-capsules/docs/whitepaper.md) - shareable paper draft
 - [docs/protocol.md](/X:/Experiments/session-capsules/docs/protocol.md) - manifest, ledger, reload order, storage modes, and request-path integration model
+- [docs/configuration.md](/X:/Experiments/session-capsules/docs/configuration.md) - persistent settings, launch flags, storage budget, pinning, and GC
 - [docs/integrations.md](/X:/Experiments/session-capsules/docs/integrations.md) - thin Open WebUI and opencode integration guidance for the local gateway
 - [docs/model-plane.md](/X:/Experiments/session-capsules/docs/model-plane.md) - Model Plane boundary and job-packet contract
 - [docs/verification.md](/X:/Experiments/session-capsules/docs/verification.md) - smoke-test command and verification boundary
@@ -105,6 +106,14 @@ Validate the schema examples:
 py -3 .\scripts\validate_schema_examples.py
 ```
 
+Create persistent capsule config:
+
+```powershell
+py -3 .\scripts\capsule_cli.py config init
+py -3 .\scripts\capsule_cli.py config set storage.max_bytes 50GB
+py -3 .\scripts\capsule_cli.py config set storage.min_free_bytes 20GB
+```
+
 Run the soft-capsule CLI lifecycle without a loaded model:
 
 ```powershell
@@ -147,11 +156,21 @@ py -3 .\scripts\capsule_cli.py import .\research-loop-small.scap
 
 By default, `.scap` export is ledger-only: it includes endpoint metadata, thread ledger, transcript, capsule manifests, and prefill sources, but omits hard snapshot blobs. Add `--include-snapshots` only when intentionally moving same-runtime local snapshot files.
 
+Inspect and clean local hard capsule storage:
+
+```powershell
+py -3 .\scripts\capsule_cli.py stats
+py -3 .\scripts\capsule_cli.py pin --thread research-loop-small
+py -3 .\scripts\capsule_cli.py gc --dry-run
+py -3 .\scripts\capsule_cli.py gc --apply
+```
+
 Run the fake `llama.cpp` hard-path smoke test:
 
 ```powershell
 py -3 .\scripts\test_capsule_cli_fake_llamacpp.py
 py -3 .\scripts\test_capsule_cli_export_import.py
+py -3 .\scripts\test_capsule_cli_storage_gc.py
 py -3 .\scripts\test_capsule_cli_model_plane_jobs.py
 py -3 .\scripts\test_capsule_gateway_fake_backend.py
 ```

@@ -197,6 +197,33 @@
         }
       }
     },
+    "lifecycle": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "pinned": {
+          "type": "boolean"
+        },
+        "pinned_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "unpinned_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "snapshot_present": {
+          "type": "boolean"
+        },
+        "snapshot_deleted_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "snapshot_delete_reason": {
+          "type": "string"
+        }
+      }
+    },
     "notes": {
       "type": "array",
       "items": {

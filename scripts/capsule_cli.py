@@ -11,6 +11,7 @@ import argparse
 import hashlib
 import json
 import re
+import shutil
 import sys
 import zipfile
 from dataclasses import dataclass
@@ -31,6 +32,37 @@ CAPABILITY_KEYS = [
     "sealed_blobs",
     "transcript_replay_fallback",
 ]
+
+DEFAULT_CONFIG: JSONDict = {
+    "schema_version": "0.1",
+    "storage": {
+        "max_bytes": "50GB",
+        "min_free_bytes": "20GB",
+        "prune_policy": "oldest_unpinned_first",
+        "keep_latest_per_thread": 1,
+        "protect_active_prefills": True,
+    },
+}
+
+CONFIG_SETTERS = {
+    "storage.max_bytes",
+    "storage.min_free_bytes",
+    "storage.prune_policy",
+    "storage.keep_latest_per_thread",
+    "storage.protect_active_prefills",
+}
+
+BYTE_UNITS = {
+    "B": 1,
+    "KB": 1000,
+    "MB": 1000**2,
+    "GB": 1000**3,
+    "TB": 1000**4,
+    "KIB": 1024,
+    "MIB": 1024**2,
+    "GIB": 1024**3,
+    "TIB": 1024**4,
+}
 
 
 def now_iso() -> str:
@@ -108,6 +140,14 @@ class Store:
     def prefills_dir(self) -> Path:
         return self.root / "prefills"
 
+    @property
+    def config_dir(self) -> Path:
+        return self.root / "config"
+
+    @property
+    def config_path(self) -> Path:
+        return self.config_dir / "settings.json"
+
     def endpoint_path(self, endpoint_id: str) -> Path:
         return self.endpoints_dir / f"{endpoint_id}.json"
 
@@ -149,6 +189,100 @@ class Store:
         if not path.exists():
             raise FileNotFoundError(f"Thread not found: {thread_id}")
         return read_json(path)
+
+
+def deep_copy_json(payload: JSONDict) -> JSONDict:
+    return json.loads(json.dumps(payload))
+
+
+def merge_config(defaults: JSONDict, overrides: JSONDict) -> JSONDict:
+    merged = deep_copy_json(defaults)
+    for key, value in overrides.items():
+        if isinstance(value, dict) and isinstance(merged.get(key), dict):
+            merged[key] = merge_config(merged[key], value)
+        else:
+            merged[key] = value
+    return merged
+
+
+def load_config(store: Store) -> JSONDict:
+    if not store.config_path.exists():
+        return deep_copy_json(DEFAULT_CONFIG)
+    data = read_json(store.config_path)
+    return merge_config(DEFAULT_CONFIG, data)
+
+
+def write_config(store: Store, config: JSONDict) -> None:
+    write_json(store.config_path, config)
+
+
+def parse_bool(value: str) -> bool:
+    normalized = value.strip().lower()
+    if normalized in {"1", "true", "yes", "on"}:
+        return True
+    if normalized in {"0", "false", "no", "off"}:
+        return False
+    raise ValueError(f"Not a boolean value: {value}")
+
+
+def parse_config_value(key: str, value: str) -> Any:
+    if key == "storage.protect_active_prefills":
+        return parse_bool(value)
+    if key == "storage.keep_latest_per_thread":
+        parsed = int(value)
+        if parsed < 0:
+            raise ValueError("storage.keep_latest_per_thread must be >= 0")
+        return parsed
+    if key == "storage.prune_policy":
+        if value != "oldest_unpinned_first":
+            raise ValueError("Only oldest_unpinned_first is supported")
+        return value
+    if key in {"storage.max_bytes", "storage.min_free_bytes"}:
+        parse_bytes(value)
+        return value
+    return value
+
+
+def set_nested(payload: JSONDict, key: str, value: Any) -> None:
+    parts = key.split(".")
+    target = payload
+    for part in parts[:-1]:
+        child = target.setdefault(part, {})
+        if not isinstance(child, dict):
+            raise ValueError(f"Cannot set nested config under non-object key: {part}")
+        target = child
+    target[parts[-1]] = value
+
+
+def get_nested(payload: JSONDict, key: str) -> Any:
+    target: Any = payload
+    for part in key.split("."):
+        if not isinstance(target, dict) or part not in target:
+            raise KeyError(key)
+        target = target[part]
+    return target
+
+
+def parse_bytes(value: str | int | float) -> int:
+    if isinstance(value, (int, float)):
+        if value < 0:
+            raise ValueError("byte value must be nonnegative")
+        return int(value)
+    match = re.fullmatch(r"\s*(\d+(?:\.\d+)?)\s*([A-Za-z]+)?\s*", value)
+    if not match:
+        raise ValueError(f"Invalid byte size: {value}")
+    amount = float(match.group(1))
+    unit = (match.group(2) or "B").upper()
+    if unit not in BYTE_UNITS:
+        raise ValueError(f"Unsupported byte unit: {unit}")
+    return int(amount * BYTE_UNITS[unit])
+
+
+def format_bytes(value: int) -> str:
+    for label, scale in [("TB", 1000**4), ("GB", 1000**3), ("MB", 1000**2), ("KB", 1000)]:
+        if value >= scale:
+            return f"{value / scale:.2f}{label}"
+    return f"{value}B"
 
 
 def make_endpoint(args: argparse.Namespace) -> JSONDict:
@@ -1284,6 +1418,299 @@ def import_bundle(args: argparse.Namespace) -> int:
     return 0
 
 
+def config_init(args: argparse.Namespace) -> int:
+    store = Store(args.state_dir)
+    if store.config_path.exists() and not args.force:
+        print(f"config already exists: {store.config_path}")
+        return 0
+    write_config(store, load_config(store))
+    print(f"wrote config: {store.config_path}")
+    return 0
+
+
+def config_show(args: argparse.Namespace) -> int:
+    store = Store(args.state_dir)
+    config = load_config(store)
+    if args.key:
+        print(get_nested(config, args.key))
+    else:
+        print(json.dumps(config, indent=2))
+    return 0
+
+
+def config_set(args: argparse.Namespace) -> int:
+    if args.key not in CONFIG_SETTERS:
+        allowed = ", ".join(sorted(CONFIG_SETTERS))
+        raise RuntimeError(f"Unsupported config key: {args.key}. Allowed: {allowed}")
+    store = Store(args.state_dir)
+    config = load_config(store)
+    set_nested(config, args.key, parse_config_value(args.key, args.value))
+    write_config(store, config)
+    print(f"set {args.key}={get_nested(config, args.key)}")
+    return 0
+
+
+def resolve_snapshot_path(store: Store, snapshot_ref: str) -> Path:
+    path = Path(snapshot_ref)
+    if path.is_absolute():
+        return path
+    return store.root / path
+
+
+def manifest_lifecycle(manifest: JSONDict) -> JSONDict:
+    lifecycle = manifest.setdefault("lifecycle", {})
+    if not isinstance(lifecycle, dict):
+        lifecycle = {}
+        manifest["lifecycle"] = lifecycle
+    return lifecycle
+
+
+def iter_thread_ledgers(store: Store) -> list[tuple[Path, JSONDict]]:
+    if not store.threads_dir.exists():
+        return []
+    rows: list[tuple[Path, JSONDict]] = []
+    for ledger_path in sorted(store.threads_dir.glob("*/thread-ledger.json")):
+        rows.append((ledger_path, read_json(ledger_path)))
+    return rows
+
+
+def hard_snapshot_records(store: Store, config: JSONDict) -> list[JSONDict]:
+    records: list[JSONDict] = []
+    keep_latest = int(config["storage"].get("keep_latest_per_thread", 1))
+
+    for ledger_path, ledger in iter_thread_ledgers(store):
+        hard_records: list[JSONDict] = []
+        for link in ledger.get("capsules", []):
+            manifest_path = store.root / link["manifest_ref"]
+            if not manifest_path.exists():
+                continue
+            manifest = read_json(manifest_path)
+            storage = manifest.get("storage", {})
+            snapshot_ref = storage.get("snapshot_ref")
+            if storage.get("mode") != "local_file" or not snapshot_ref:
+                continue
+            snapshot_path = resolve_snapshot_path(store, snapshot_ref)
+            lifecycle = manifest.get("lifecycle", {})
+            pinned = bool(link.get("pinned") or lifecycle.get("pinned"))
+            active = link["capsule_id"] == ledger.get("active_capsule_id")
+            record: JSONDict = {
+                "kind": "thread",
+                "thread_id": ledger["thread_id"],
+                "capsule_id": link["capsule_id"],
+                "manifest_ref": link["manifest_ref"],
+                "manifest_path": manifest_path,
+                "ledger_path": ledger_path,
+                "snapshot_ref": snapshot_ref,
+                "snapshot_path": snapshot_path,
+                "size": snapshot_path.stat().st_size if snapshot_path.exists() else int(storage.get("snapshot_bytes") or 0),
+                "exists": snapshot_path.exists(),
+                "created_at": manifest.get("created_at", ""),
+                "pinned": pinned,
+                "active": active,
+                "latest_protected": False,
+                "protected": pinned or active,
+                "protect_reason": "pinned" if pinned else ("active" if active else ""),
+            }
+            hard_records.append(record)
+            records.append(record)
+
+        protected_latest = sorted(
+            [item for item in hard_records if item["exists"]],
+            key=lambda item: (item["created_at"], item["capsule_id"]),
+            reverse=True,
+        )[:keep_latest]
+        for record in protected_latest:
+            record["latest_protected"] = True
+            if not record["protected"]:
+                record["protected"] = True
+                record["protect_reason"] = "latest_per_thread"
+
+    if store.prefills_dir.exists():
+        for index_path in sorted(store.prefills_dir.glob("*/index.json")):
+            index = read_json(index_path)
+            active_version = index.get("active_version")
+            for link in index.get("versions", []):
+                manifest_path = store.root / link["manifest_ref"]
+                if not manifest_path.exists():
+                    continue
+                manifest = read_json(manifest_path)
+                storage = manifest.get("storage", {})
+                snapshot_ref = storage.get("snapshot_ref")
+                if storage.get("mode") != "local_file" or not snapshot_ref:
+                    continue
+                snapshot_path = resolve_snapshot_path(store, snapshot_ref)
+                lifecycle = manifest.get("lifecycle", {})
+                pinned = bool(link.get("pinned") or lifecycle.get("pinned"))
+                active = link.get("version") == active_version
+                protect_active = bool(config["storage"].get("protect_active_prefills", True))
+                records.append(
+                    {
+                        "kind": "prefill",
+                        "prefill_name": index["prefill_name"],
+                        "version": link.get("version"),
+                        "capsule_id": link["capsule_id"],
+                        "manifest_ref": link["manifest_ref"],
+                        "manifest_path": manifest_path,
+                        "index_path": index_path,
+                        "snapshot_ref": snapshot_ref,
+                        "snapshot_path": snapshot_path,
+                        "size": snapshot_path.stat().st_size if snapshot_path.exists() else int(storage.get("snapshot_bytes") or 0),
+                        "exists": snapshot_path.exists(),
+                        "created_at": manifest.get("created_at", ""),
+                        "pinned": pinned,
+                        "active": active,
+                        "latest_protected": False,
+                        "protected": pinned or (active and protect_active),
+                        "protect_reason": "pinned" if pinned else ("active_prefill" if active and protect_active else ""),
+                    }
+                )
+
+    return records
+
+
+def storage_stats(args: argparse.Namespace) -> int:
+    store = Store(args.state_dir)
+    config = load_config(store)
+    records = hard_snapshot_records(store, config)
+    existing = [record for record in records if record["exists"]]
+    missing = [record for record in records if not record["exists"]]
+    protected = [record for record in existing if record["protected"]]
+    reclaimable = [record for record in existing if not record["protected"]]
+    total_bytes = sum(int(record["size"]) for record in existing)
+    reclaimable_bytes = sum(int(record["size"]) for record in reclaimable)
+    max_bytes = parse_bytes(config["storage"]["max_bytes"])
+    min_free_bytes = parse_bytes(config["storage"]["min_free_bytes"])
+    disk_root = store.root if store.root.exists() else store.root.parent
+    disk = shutil.disk_usage(disk_root)
+
+    print(f"state dir: {store.root}")
+    print(f"config: {store.config_path if store.config_path.exists() else '<defaults>'}")
+    print(f"hard snapshots: {len(existing)} existing, {len(missing)} missing")
+    print(f"snapshot bytes: {format_bytes(total_bytes)}")
+    print(f"reclaimable bytes: {format_bytes(reclaimable_bytes)}")
+    print(f"protected snapshots: {len(protected)}")
+    print(f"storage.max_bytes: {config['storage']['max_bytes']} ({format_bytes(max_bytes)})")
+    print(f"storage.min_free_bytes: {config['storage']['min_free_bytes']} ({format_bytes(min_free_bytes)})")
+    print(f"disk free: {format_bytes(disk.free)}")
+    return 0
+
+
+def update_thread_capsule_pin(store: Store, thread_id: str, capsule_id: str | None, pinned: bool) -> str:
+    ledger = store.load_ledger(thread_id)
+    target_id = capsule_id or ledger.get("active_capsule_id")
+    if target_id is None:
+        raise RuntimeError(f"Thread has no active capsule: {thread_id}")
+    link = find_capsule_link(ledger, target_id)
+    if link is None:
+        raise RuntimeError(f"Capsule not found: {target_id}")
+    link["pinned"] = pinned
+    manifest_path = store.root / link["manifest_ref"]
+    manifest = read_json(manifest_path)
+    lifecycle = manifest_lifecycle(manifest)
+    lifecycle["pinned"] = pinned
+    lifecycle["pinned_at" if pinned else "unpinned_at"] = now_iso()
+    write_json(manifest_path, manifest)
+    write_json(store.ledger_path(thread_id), ledger)
+    return str(target_id)
+
+
+def pin_capsule(args: argparse.Namespace) -> int:
+    capsule_id = update_thread_capsule_pin(Store(args.state_dir), args.thread, args.capsule_id, True)
+    print(f"pinned capsule: {capsule_id}")
+    return 0
+
+
+def unpin_capsule(args: argparse.Namespace) -> int:
+    capsule_id = update_thread_capsule_pin(Store(args.state_dir), args.thread, args.capsule_id, False)
+    print(f"unpinned capsule: {capsule_id}")
+    return 0
+
+
+def gc_plan(store: Store, config: JSONDict, max_bytes: str | None, min_free_bytes: str | None) -> tuple[list[JSONDict], int, int]:
+    effective_max = parse_bytes(max_bytes or config["storage"]["max_bytes"])
+    effective_min_free = parse_bytes(min_free_bytes or config["storage"]["min_free_bytes"])
+    records = hard_snapshot_records(store, config)
+    existing = [record for record in records if record["exists"]]
+    total_bytes = sum(int(record["size"]) for record in existing)
+    disk_root = store.root if store.root.exists() else store.root.parent
+    free_bytes = shutil.disk_usage(disk_root).free
+    target_reclaim = max(0, total_bytes - effective_max, effective_min_free - free_bytes)
+    if target_reclaim <= 0:
+        return [], total_bytes, target_reclaim
+
+    candidates = sorted(
+        [record for record in existing if not record["protected"]],
+        key=lambda record: (record["created_at"], record["snapshot_ref"]),
+    )
+    selected: list[JSONDict] = []
+    reclaimed = 0
+    for record in candidates:
+        selected.append(record)
+        reclaimed += int(record["size"])
+        if reclaimed >= target_reclaim:
+            break
+    return selected, total_bytes, target_reclaim
+
+
+def mark_snapshot_deleted(store: Store, record: JSONDict) -> None:
+    manifest_path = record["manifest_path"]
+    manifest = read_json(manifest_path)
+    lifecycle = manifest_lifecycle(manifest)
+    lifecycle["snapshot_present"] = False
+    lifecycle["snapshot_deleted_at"] = now_iso()
+    lifecycle["snapshot_delete_reason"] = "storage_gc"
+    notes = manifest.setdefault("notes", [])
+    if isinstance(notes, list):
+        notes.append("Hard snapshot blob deleted by storage GC; transcript replay remains canonical.")
+    write_json(manifest_path, manifest)
+
+    if record["kind"] == "thread":
+        ledger = read_json(record["ledger_path"])
+        link = find_capsule_link(ledger, record["capsule_id"])
+        if link is not None:
+            link["status"] = "missing"
+        write_json(record["ledger_path"], ledger)
+
+
+def gc_storage(args: argparse.Namespace) -> int:
+    if args.apply and args.dry_run:
+        raise RuntimeError("Use either --dry-run or --apply, not both")
+    store = Store(args.state_dir)
+    config = load_config(store)
+    selected, total_bytes, target_reclaim = gc_plan(store, config, args.max_bytes, args.min_free_bytes)
+    mode = "apply" if args.apply else "dry-run"
+    print(f"mode: {mode}")
+    print(f"snapshot bytes: {format_bytes(total_bytes)}")
+    print(f"target reclaim: {format_bytes(target_reclaim)}")
+    if not selected:
+        print("gc candidates: 0")
+        return 0
+
+    print(f"gc candidates: {len(selected)}")
+    for record in selected:
+        print(
+            f"{record['kind']} {record['capsule_id']} {format_bytes(int(record['size']))} "
+            f"{record['snapshot_ref']}"
+        )
+
+    if not args.apply:
+        print("dry-run only; pass --apply to delete selected hard snapshot blobs")
+        return 0
+
+    deleted = 0
+    deleted_bytes = 0
+    for record in selected:
+        path = record["snapshot_path"]
+        if path.exists():
+            deleted_bytes += path.stat().st_size
+            path.unlink()
+            deleted += 1
+        mark_snapshot_deleted(store, record)
+    print(f"deleted snapshots: {deleted}")
+    print(f"deleted bytes: {format_bytes(deleted_bytes)}")
+    return 0
+
+
 def require_job_param(params: JSONDict, key: str) -> Any:
     if key not in params:
         raise RuntimeError(f"Job params missing required key: {key}")
@@ -1540,6 +1967,42 @@ def build_parser() -> argparse.ArgumentParser:
     job_run.add_argument("job", type=Path)
     job_run.add_argument("--dry-run", action="store_true")
     job_run.set_defaults(func=run_job_packet)
+
+    config_cmd = subcommands.add_parser("config")
+    config_sub = config_cmd.add_subparsers(dest="config_command", required=True)
+
+    config_init_parser = config_sub.add_parser("init")
+    config_init_parser.add_argument("--force", action="store_true")
+    config_init_parser.set_defaults(func=config_init)
+
+    config_show_parser = config_sub.add_parser("show")
+    config_show_parser.add_argument("key", nargs="?")
+    config_show_parser.set_defaults(func=config_show)
+
+    config_set_parser = config_sub.add_parser("set")
+    config_set_parser.add_argument("key")
+    config_set_parser.add_argument("value")
+    config_set_parser.set_defaults(func=config_set)
+
+    stats_cmd = subcommands.add_parser("stats")
+    stats_cmd.set_defaults(func=storage_stats)
+
+    pin_cmd = subcommands.add_parser("pin")
+    pin_cmd.add_argument("--thread", required=True)
+    pin_cmd.add_argument("--capsule-id", help="Defaults to the active capsule for the thread.")
+    pin_cmd.set_defaults(func=pin_capsule)
+
+    unpin_cmd = subcommands.add_parser("unpin")
+    unpin_cmd.add_argument("--thread", required=True)
+    unpin_cmd.add_argument("--capsule-id", help="Defaults to the active capsule for the thread.")
+    unpin_cmd.set_defaults(func=unpin_capsule)
+
+    gc_cmd = subcommands.add_parser("gc")
+    gc_cmd.add_argument("--dry-run", action="store_true", help="Show deletion plan without deleting. This is the default.")
+    gc_cmd.add_argument("--apply", action="store_true", help="Delete selected unpinned hard snapshot blobs.")
+    gc_cmd.add_argument("--max-bytes", help="One-run override for storage.max_bytes, e.g. 50GB.")
+    gc_cmd.add_argument("--min-free-bytes", help="One-run override for storage.min_free_bytes, e.g. 20GB.")
+    gc_cmd.set_defaults(func=gc_storage)
 
     prefill = subcommands.add_parser("prefill")
     prefill_sub = prefill.add_subparsers(dest="prefill_command", required=True)

@@ -1,0 +1,10 @@
+{
+  "schema_version": "0.1",
+  "storage": {
+    "max_bytes": "50GB",
+    "min_free_bytes": "20GB",
+    "prune_policy": "oldest_unpinned_first",
+    "keep_latest_per_thread": 1,
+    "protect_active_prefills": true
+  }
+}

@@ -15,6 +15,7 @@ It performs:
 - schema/example validation
 - fake `llama.cpp` hard capsule save/restore smoke test
 - `.scap` export/import smoke test
+- storage config, pinning, stats, and GC smoke test
 - Model Plane job-packet smoke test
 - local gateway fake-backend smoke test
 
@@ -26,6 +27,7 @@ Verified on 2026-06-16:
 schema examples ok
 fake llama.cpp CLI smoke test ok
 .scap export/import smoke test ok
+storage config and GC smoke test ok
 model-plane job packet smoke test ok
 capsule gateway fake backend smoke test ok
 ```

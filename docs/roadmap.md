@@ -369,8 +369,35 @@ Recommended order:
 7. Stage 6: local gateway
 8. Stage 7: native integrations
 9. Stage 8: Model Plane
+10. Stage 9: capsule storage management
 
 Do not start with gateway or Model Plane. They become simpler after the ledger, manifest, and CLI lifecycle are real.
+
+## Stage 9: Capsule Storage Management
+
+Goal: Treat hard capsule snapshots as managed cache artifacts instead of letting them grow without bound.
+
+Implementation steps:
+
+- Add persistent settings under `.capsules/config/settings.json`.
+- Add a storage budget with a sensible default.
+- Add a disk free-space floor.
+- Add pin/unpin for important thread capsules.
+- Add stats and GC commands.
+- Keep transcripts, ledgers, manifests, and soft checkpoints durable.
+- Delete only eligible hard snapshot blobs.
+- Mark manifests or ledger links when a hard snapshot blob is missing.
+
+Initial status:
+
+- `config init/show/set` manages persistent settings.
+- Default storage budget is `50GB` with `20GB` minimum free disk.
+- `stats` reports snapshot bytes, reclaimable bytes, protected snapshots, quota, and free disk.
+- `pin` and `unpin` protect specific thread capsules.
+- `gc --dry-run` previews oldest-unpinned-first cleanup.
+- `gc --apply` deletes eligible hard snapshot blobs and marks their ledger links as `missing`.
+- `schemas/capsule-config.schema.json` and `examples/capsule-config.example.json` define the first config contract.
+- `scripts/test_capsule_cli_storage_gc.py` validates config, pinning, latest-per-thread protection, and GC behavior.
 
 ## First Three Implementation Tickets
 
