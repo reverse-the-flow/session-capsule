@@ -64,6 +64,191 @@ BYTE_UNITS = {
     "TIB": 1024**4,
 }
 
+HELP_TOPICS: dict[str, str] = {
+    "overview": """Session Capsules keep the transcript canonical and treat hard runtime snapshots as acceleration.
+
+Core objects:
+  endpoint   where the model server lives
+  thread     canonical transcript plus capsule ledger
+  capsule    checkpoint manifest, optionally pointing at a hard snapshot
+  prefill    reusable root capsule for stable user/project context
+  gateway    local OpenAI-compatible request-path layer
+
+Start here:
+  py -3 .\\scripts\\capsule_cli.py config init
+  py -3 .\\scripts\\capsule_cli.py endpoint add local-llamacpp --type llamacpp --base-url http://localhost:8080
+  py -3 .\\scripts\\capsule_cli.py thread start --endpoint local-llamacpp --name research-loop
+  py -3 .\\scripts\\capsule_cli.py inspect
+
+More:
+  capsule help config
+  capsule help gateway
+  capsule help storage
+  capsule help model-plane""",
+    "config": """Persistent config lives under:
+  .capsules/config/settings.json
+
+Use persistent config for policy that should survive restarts:
+  storage.max_bytes
+  storage.min_free_bytes
+  storage.prune_policy
+  storage.keep_latest_per_thread
+  storage.protect_active_prefills
+
+Commands:
+  py -3 .\\scripts\\capsule_cli.py config init
+  py -3 .\\scripts\\capsule_cli.py config show
+  py -3 .\\scripts\\capsule_cli.py config show storage.max_bytes
+  py -3 .\\scripts\\capsule_cli.py config set storage.max_bytes 50GB
+
+Launch-specific values stay as flags or Model Plane launch profile fields:
+  --host, --port, --endpoint, --slot, --checkpoint-mode, --timeout""",
+    "endpoint": """Endpoint records describe a model target. They do not contain model weights.
+
+Add an endpoint:
+  py -3 .\\scripts\\capsule_cli.py endpoint add local-llamacpp --type llamacpp --base-url http://localhost:8080
+
+Useful metadata:
+  --runtime-build
+  --model-ref
+  --model-hash
+  --tokenizer-hash
+  --context-limit
+  --slot-field
+
+Check hard capsule support:
+  py -3 .\\scripts\\capsule_cli.py endpoint doctor local-llamacpp --strict""",
+    "thread": """A thread is the canonical transcript and capsule chain.
+
+Start:
+  py -3 .\\scripts\\capsule_cli.py thread start --endpoint local-llamacpp --name research-loop
+
+Append:
+  py -3 .\\scripts\\capsule_cli.py thread append --thread research-loop --role user --content "Initial request"
+
+Checkpoint:
+  py -3 .\\scripts\\capsule_cli.py checkpoint --thread research-loop --soft
+  py -3 .\\scripts\\capsule_cli.py checkpoint --thread research-loop --hard --slot 0
+
+Inspect:
+  py -3 .\\scripts\\capsule_cli.py inspect --thread research-loop""",
+    "prefill": """A prefill is reusable stable context used as a root or early parent capsule.
+
+Create a soft prefill:
+  py -3 .\\scripts\\capsule_cli.py prefill create --endpoint local-llamacpp --name user_default --input .\\user_prefill.md --soft
+
+Create a hard local prefill:
+  py -3 .\\scripts\\capsule_cli.py prefill create --endpoint local-llamacpp --name user_default --input .\\user_prefill.md --hard --slot 0
+
+Use it when starting a thread:
+  py -3 .\\scripts\\capsule_cli.py thread start --endpoint local-llamacpp --prefill user_default --name project-thread
+
+Changed prefill text should create a new version, not mutate history:
+  py -3 .\\scripts\\capsule_cli.py prefill diff --name user_default --input .\\user_prefill.md""",
+    "gateway": """The gateway is a local OpenAI-compatible request-path layer.
+
+It owns:
+  thread identity
+  restore/checkpoint policy
+  transcript diffs
+  fallback replay
+
+The model server still owns:
+  model weights
+  tokenizer/runtime internals
+  live KV cache
+  slots
+  generation
+
+Run soft mode:
+  py -3 .\\scripts\\capsule_gateway.py --state-dir .\\.capsules --endpoint local-llamacpp --port 8765 --checkpoint-mode soft
+
+Run hard local mode:
+  py -3 .\\scripts\\capsule_gateway.py --state-dir .\\.capsules --endpoint local-llamacpp --port 8765 --checkpoint-mode hard --slot 0
+
+Client base URL:
+  http://127.0.0.1:8765/v1
+
+Optional headers:
+  X-Capsule-Thread
+  X-Capsule-Workspace
+  X-Capsule-Prefill""",
+    "storage": """Hard snapshots can be large. They are managed cache artifacts unless pinned.
+
+Defaults:
+  storage.max_bytes = 50GB
+  storage.min_free_bytes = 20GB
+  storage.prune_policy = oldest_unpinned_first
+  storage.keep_latest_per_thread = 1
+
+Pinned capsules are always protected.
+Transcripts, ledgers, and manifests are never deleted by GC.
+
+Inspect:
+  py -3 .\\scripts\\capsule_cli.py stats
+
+Pin active capsule:
+  py -3 .\\scripts\\capsule_cli.py pin --thread research-loop
+
+Preview cleanup:
+  py -3 .\\scripts\\capsule_cli.py gc --dry-run
+
+Apply cleanup:
+  py -3 .\\scripts\\capsule_cli.py gc --apply""",
+    "bundles": """A .scap bundle exports a thread without transporting model weights.
+
+Ledger-only export:
+  py -3 .\\scripts\\capsule_cli.py export --thread research-loop --out .\\research-loop.scap
+
+Include local hard snapshots only when intentionally moving same-runtime blobs:
+  py -3 .\\scripts\\capsule_cli.py export --thread research-loop --out .\\research-loop.scap --include-snapshots
+
+Import:
+  py -3 .\\scripts\\capsule_cli.py import .\\research-loop.scap
+
+If snapshots are omitted, transcript replay remains the fallback.""",
+    "model-plane": """Model Plane should supervise Session Capsules, not become the gateway.
+
+Model Plane owns:
+  launch profile
+  endpoint registry
+  process lifecycle
+  health checks
+  job routing policy
+
+Capsule gateway owns:
+  OpenAI-compatible request path
+  thread ledger lookup
+  restore/checkpoint
+  transcript diffs
+  fallback replay
+
+Run a job packet:
+  py -3 .\\scripts\\capsule_cli.py job run .\\examples\\model-plane\\checkpoint-thread.example.json --dry-run
+
+Gateway health endpoint for launch profiles:
+  /api/capsules/status""",
+    "troubleshooting": """Common checks:
+
+No endpoint:
+  py -3 .\\scripts\\capsule_cli.py inspect
+
+Hard restore not working:
+  py -3 .\\scripts\\capsule_cli.py endpoint doctor local-llamacpp --strict
+
+Storage growing:
+  py -3 .\\scripts\\capsule_cli.py stats
+  py -3 .\\scripts\\capsule_cli.py gc --dry-run
+
+Gateway client fails:
+  Use stream=false for gateway v0.
+  Check http://127.0.0.1:8765/api/capsules/status.
+  Verify the client points at http://127.0.0.1:8765/v1.
+
+Docker client cannot reach host gateway:
+  Use http://host.docker.internal:8765/v1 from inside Docker.""",
+}
+
 
 def now_iso() -> str:
     return datetime.now().astimezone().isoformat(timespec="seconds")
@@ -1711,6 +1896,19 @@ def gc_storage(args: argparse.Namespace) -> int:
     return 0
 
 
+def capsule_help(args: argparse.Namespace) -> int:
+    topic = args.topic or "overview"
+    if args.topics:
+        for name in sorted(HELP_TOPICS):
+            print(name)
+        return 0
+    if topic not in HELP_TOPICS:
+        available = ", ".join(sorted(HELP_TOPICS))
+        raise RuntimeError(f"Unknown help topic: {topic}. Available: {available}")
+    print(HELP_TOPICS[topic].strip())
+    return 0
+
+
 def require_job_param(params: JSONDict, key: str) -> Any:
     if key not in params:
         raise RuntimeError(f"Job params missing required key: {key}")
@@ -2003,6 +2201,11 @@ def build_parser() -> argparse.ArgumentParser:
     gc_cmd.add_argument("--max-bytes", help="One-run override for storage.max_bytes, e.g. 50GB.")
     gc_cmd.add_argument("--min-free-bytes", help="One-run override for storage.min_free_bytes, e.g. 20GB.")
     gc_cmd.set_defaults(func=gc_storage)
+
+    help_cmd = subcommands.add_parser("help", help="Show Session Capsules conceptual help.")
+    help_cmd.add_argument("topic", nargs="?", help="Help topic. Defaults to overview.")
+    help_cmd.add_argument("--topics", action="store_true", help="List available help topics.")
+    help_cmd.set_defaults(func=capsule_help)
 
     prefill = subcommands.add_parser("prefill")
     prefill_sub = prefill.add_subparsers(dest="prefill_command", required=True)

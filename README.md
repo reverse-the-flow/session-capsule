@@ -44,6 +44,7 @@ That matters most for:
 ## Repository Layout
 
 - [docs/whitepaper.md](/X:/Experiments/session-capsules/docs/whitepaper.md) - shareable paper draft
+- [docs/help.md](/X:/Experiments/session-capsules/docs/help.md) - quick conceptual help and CLI help topic map
 - [docs/protocol.md](/X:/Experiments/session-capsules/docs/protocol.md) - manifest, ledger, reload order, storage modes, and request-path integration model
 - [docs/configuration.md](/X:/Experiments/session-capsules/docs/configuration.md) - persistent settings, launch flags, storage budget, pinning, and GC
 - [docs/integrations.md](/X:/Experiments/session-capsules/docs/integrations.md) - thin Open WebUI and opencode integration guidance for the local gateway
@@ -104,6 +105,14 @@ Validate the schema examples:
 
 ```powershell
 py -3 .\scripts\validate_schema_examples.py
+```
+
+Show conceptual CLI help:
+
+```powershell
+py -3 .\scripts\capsule_cli.py help
+py -3 .\scripts\capsule_cli.py help --topics
+py -3 .\scripts\capsule_cli.py help storage
 ```
 
 Create persistent capsule config:

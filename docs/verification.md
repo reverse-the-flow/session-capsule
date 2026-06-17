@@ -13,6 +13,7 @@ It performs:
 - Python syntax compilation
 - ASCII scan for repo text artifacts
 - schema/example validation
+- conceptual CLI help smoke test
 - fake `llama.cpp` hard capsule save/restore smoke test
 - `.scap` export/import smoke test
 - storage config, pinning, stats, and GC smoke test
@@ -25,6 +26,7 @@ Verified on 2026-06-16:
 
 ```text
 schema examples ok
+CLI conceptual help smoke test ok
 fake llama.cpp CLI smoke test ok
 .scap export/import smoke test ok
 storage config and GC smoke test ok

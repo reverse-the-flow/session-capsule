@@ -17,6 +17,7 @@ PYTHON_FILES = [
     ROOT / "scripts" / "capsule_cli.py",
     ROOT / "scripts" / "capsule_gateway.py",
     ROOT / "scripts" / "simulate_capsules.py",
+    ROOT / "scripts" / "test_capsule_cli_help.py",
     ROOT / "scripts" / "test_capsule_cli_export_import.py",
     ROOT / "scripts" / "test_capsule_cli_fake_llamacpp.py",
     ROOT / "scripts" / "test_capsule_cli_storage_gc.py",
@@ -27,6 +28,7 @@ PYTHON_FILES = [
 
 TEST_SCRIPTS = [
     ROOT / "scripts" / "validate_schema_examples.py",
+    ROOT / "scripts" / "test_capsule_cli_help.py",
     ROOT / "scripts" / "test_capsule_cli_fake_llamacpp.py",
     ROOT / "scripts" / "test_capsule_cli_export_import.py",
     ROOT / "scripts" / "test_capsule_cli_storage_gc.py",
