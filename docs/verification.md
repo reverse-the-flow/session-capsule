@@ -17,7 +17,7 @@ It performs:
 - fake `llama.cpp` hard capsule save/restore smoke test
 - `.scap` export/import smoke test
 - storage config, pinning, stats, and GC smoke test
-- Model Plane job-packet smoke test
+- Model Plane job-packet smoke test, including gateway transport job packets
 - local gateway fake-backend smoke test
 - gateway bundle export/list/download/upload/delete smoke path
 

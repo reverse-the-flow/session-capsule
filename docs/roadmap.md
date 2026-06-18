@@ -355,6 +355,7 @@ Initial status:
 - `capsule_cli.py job run JOB.json` executes those packets through the existing harness paths.
 - `--dry-run` prints packet intent without touching the ledger or runtime.
 - `docs/model-plane.md` records the boundary: Model Plane owns routing and policy, not model weights, live KV tensors, runtime slot layout, or the inference loop.
+- Gateway transport job packet types cover bundle export, list, download, import, and delete through the local gateway API.
 
 ## Development Order
 
@@ -433,6 +434,7 @@ Initial status:
 - Bundle ids are slugged and scoped to `.capsules/bundles/`.
 - The gateway launch flag `--max-bundle-bytes` caps raw upload size.
 - `scripts/test_capsule_gateway_fake_backend.py` validates export, list, download, raw upload import, and delete through the gateway.
+- Model Plane job packets can now invoke the gateway transport endpoints through `capsule_cli.py job run`.
 
 ## First Three Implementation Tickets
 

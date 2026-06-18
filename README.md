@@ -233,6 +233,12 @@ Run a Model Plane job packet through the standalone harness:
 py -3 .\scripts\capsule_cli.py --state-dir .\.capsules job run .\examples\model-plane\checkpoint-thread.example.json --dry-run
 ```
 
+Gateway upload/download can also be driven by Model Plane job packets:
+
+```powershell
+py -3 .\scripts\capsule_cli.py --state-dir .\.capsules job run .\examples\model-plane\gateway-export-bundle.example.json --dry-run
+```
+
 Benchmark runs are written to `data/runs/<timestamp>-<label>/` with:
 
 - `manifest.json` for provenance and configuration

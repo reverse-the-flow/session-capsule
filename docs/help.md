@@ -175,3 +175,11 @@ py -3 .\scripts\capsule_gateway.py --state-dir .\.capsules --endpoint local-llam
 Model Plane should supervise the gateway, not absorb it.
 
 Model Plane owns launch profiles, lifecycle, health checks, and job routing. The gateway owns the request path and capsule restore/checkpoint behavior. The model runtime owns model weights, live KV cache, slots, and generation.
+
+Gateway transport job packet types:
+
+- `gateway_export_bundle`
+- `gateway_list_bundles`
+- `gateway_download_bundle`
+- `gateway_import_bundle`
+- `gateway_delete_bundle`

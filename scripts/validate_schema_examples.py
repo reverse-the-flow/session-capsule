@@ -233,7 +233,18 @@ def validate_model_plane_job(path: Path) -> None:
     if data["schema_version"] != "0.1":
         raise ValidationError(f"{name} schema_version must be 0.1")
     job_type = data["job_type"]
-    if job_type not in {"resume_thread", "checkpoint_thread", "export_thread", "validate_capsule"}:
+    supported = {
+        "resume_thread",
+        "checkpoint_thread",
+        "export_thread",
+        "validate_capsule",
+        "gateway_export_bundle",
+        "gateway_list_bundles",
+        "gateway_download_bundle",
+        "gateway_import_bundle",
+        "gateway_delete_bundle",
+    }
+    if job_type not in supported:
         raise ValidationError(f"{name} has unsupported job_type {job_type}")
     params = data["params"]
     if not isinstance(params, dict):
@@ -266,6 +277,23 @@ def validate_model_plane_job(path: Path) -> None:
         require_keys(name, params, ["thread_id"])
         if "require_snapshot" in params:
             require_bool(f"{name}.params.require_snapshot", params["require_snapshot"])
+    elif job_type == "gateway_export_bundle":
+        require_keys(name, params, ["gateway_url", "thread_id"])
+        for key in ["include_snapshots", "redact_transcript", "force"]:
+            if key in params:
+                require_bool(f"{name}.params.{key}", params[key])
+    elif job_type == "gateway_list_bundles":
+        require_keys(name, params, ["gateway_url"])
+    elif job_type == "gateway_download_bundle":
+        require_keys(name, params, ["gateway_url", "bundle_id", "out"])
+    elif job_type == "gateway_import_bundle":
+        require_keys(name, params, ["gateway_url"])
+        if "bundle" not in params and "bundle_id" not in params:
+            raise ValidationError(f"{name}.params must include either bundle or bundle_id")
+        if "force" in params:
+            require_bool(f"{name}.params.force", params["force"])
+    elif job_type == "gateway_delete_bundle":
+        require_keys(name, params, ["gateway_url", "bundle_id"])
 
 
 def main() -> None:

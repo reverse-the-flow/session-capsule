@@ -1,0 +1,13 @@
+{
+  "schema_version": "0.1",
+  "job_id": "job_gateway_list_bundles",
+  "job_type": "gateway_list_bundles",
+  "created_at": "2026-06-18T12:00:00-05:00",
+  "requested_by": "model-plane",
+  "params": {
+    "gateway_url": "http://127.0.0.1:8765"
+  },
+  "notes": [
+    "This is a control-plane inventory call for locally stored gateway bundles."
+  ]
+}

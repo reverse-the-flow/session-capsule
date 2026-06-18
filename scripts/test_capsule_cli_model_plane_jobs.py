@@ -7,7 +7,10 @@ import json
 import subprocess
 import sys
 import tempfile
+import threading
 from pathlib import Path
+
+import capsule_gateway
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -51,6 +54,7 @@ def main() -> None:
         jobs = temp_path / "jobs"
         jobs.mkdir()
         bundle = temp_path / "job-thread.scap"
+        downloaded_bundle = temp_path / "job-thread-gateway.scap"
 
         run_cli(
             state,
@@ -109,6 +113,95 @@ def main() -> None:
         resume_result = run_cli(state, "job", "run", str(resume_job))
         if "type: resume_thread" not in resume_result.stdout:
             raise AssertionError("dry-run resume job did not print its plan")
+
+        config = capsule_gateway.GatewayConfig(
+            state_dir=state.resolve(),
+            endpoint_id="local-soft",
+            host="127.0.0.1",
+            port=0,
+            slot=0,
+            checkpoint_mode="soft",
+            timeout=20.0,
+            default_prefill=None,
+            default_thread_prefix="gateway",
+            max_bundle_bytes=10 * 1000 * 1000,
+            lock=threading.Lock(),
+        )
+        gateway = capsule_gateway.create_server(config)
+        gateway_thread = threading.Thread(target=gateway.serve_forever, daemon=True)
+        gateway_thread.start()
+        gateway_url = f"http://127.0.0.1:{gateway.server_port}"
+        try:
+            gateway_export_job = jobs / "gateway-export.json"
+            write_job(
+                gateway_export_job,
+                "gateway_export_bundle",
+                {
+                    "gateway_url": gateway_url,
+                    "thread_id": "job-thread",
+                    "bundle_id": "job-thread-gateway",
+                    "include_snapshots": False,
+                    "redact_transcript": False,
+                    "force": False,
+                },
+            )
+            gateway_export = run_cli(state, "job", "run", str(gateway_export_job))
+            if '"bundle_id": "job-thread-gateway"' not in gateway_export.stdout:
+                raise AssertionError("gateway export job did not return expected bundle id")
+
+            gateway_list_job = jobs / "gateway-list.json"
+            write_job(gateway_list_job, "gateway_list_bundles", {"gateway_url": gateway_url})
+            gateway_list = run_cli(state, "job", "run", str(gateway_list_job))
+            if "job-thread-gateway" not in gateway_list.stdout:
+                raise AssertionError("gateway list job did not include exported bundle")
+
+            gateway_download_job = jobs / "gateway-download.json"
+            write_job(
+                gateway_download_job,
+                "gateway_download_bundle",
+                {"gateway_url": gateway_url, "bundle_id": "job-thread-gateway", "out": str(downloaded_bundle)},
+            )
+            run_cli(state, "job", "run", str(gateway_download_job))
+            if not downloaded_bundle.exists() or not downloaded_bundle.read_bytes().startswith(b"PK"):
+                raise AssertionError("gateway download job did not write a .scap bundle")
+
+            gateway_import_upload_job = jobs / "gateway-import-upload.json"
+            write_job(
+                gateway_import_upload_job,
+                "gateway_import_bundle",
+                {
+                    "gateway_url": gateway_url,
+                    "bundle": str(downloaded_bundle),
+                    "bundle_id": "uploaded-job-thread",
+                    "force": True,
+                },
+            )
+            gateway_import_upload = run_cli(state, "job", "run", str(gateway_import_upload_job))
+            if '"thread_id": "job-thread"' not in gateway_import_upload.stdout:
+                raise AssertionError("gateway raw upload import job did not restore expected thread")
+
+            gateway_import_stored_job = jobs / "gateway-import-stored.json"
+            write_job(
+                gateway_import_stored_job,
+                "gateway_import_bundle",
+                {"gateway_url": gateway_url, "bundle_id": "uploaded-job-thread", "force": True},
+            )
+            gateway_import_stored = run_cli(state, "job", "run", str(gateway_import_stored_job))
+            if '"bundle_id": "uploaded-job-thread"' not in gateway_import_stored.stdout:
+                raise AssertionError("gateway stored import job did not use expected bundle")
+
+            gateway_delete_job = jobs / "gateway-delete.json"
+            write_job(
+                gateway_delete_job,
+                "gateway_delete_bundle",
+                {"gateway_url": gateway_url, "bundle_id": "job-thread-gateway"},
+            )
+            gateway_delete = run_cli(state, "job", "run", str(gateway_delete_job))
+            if '"deleted": true' not in gateway_delete.stdout:
+                raise AssertionError("gateway delete job did not delete exported bundle")
+        finally:
+            gateway.shutdown()
+            gateway.server_close()
 
     print("model-plane job packet smoke test ok")
 

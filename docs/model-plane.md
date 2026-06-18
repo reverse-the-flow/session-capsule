@@ -36,6 +36,11 @@ Supported job types:
 - `checkpoint_thread`
 - `export_thread`
 - `validate_capsule`
+- `gateway_export_bundle`
+- `gateway_list_bundles`
+- `gateway_download_bundle`
+- `gateway_import_bundle`
+- `gateway_delete_bundle`
 
 Run a packet with:
 
@@ -73,6 +78,14 @@ POST   /api/capsules/import
 
 The gateway owns local export/import mechanics. Model Plane owns auth, UX, retention, and remote exposure.
 
+The standalone harness can execute those transport intents as job packets:
+
+```powershell
+py -3 .\scripts\capsule_cli.py --state-dir .\.capsules job run .\examples\model-plane\gateway-export-bundle.example.json
+py -3 .\scripts\capsule_cli.py --state-dir .\.capsules job run .\examples\model-plane\gateway-download-bundle.example.json
+py -3 .\scripts\capsule_cli.py --state-dir .\.capsules job run .\examples\model-plane\gateway-import-bundle.example.json
+```
+
 ## Fallback
 
 Every job must be safe to degrade:
@@ -81,5 +94,6 @@ Every job must be safe to degrade:
 - `checkpoint_thread` can use `mode=soft` when no runtime slot is available.
 - `export_thread` omits hard snapshots unless explicitly requested.
 - `validate_capsule` can report a missing local snapshot without invalidating the canonical transcript.
+- Gateway transport jobs fail as transfer/control-plane operations without invalidating the canonical transcript.
 
 The transcript remains the source of truth. Capsules remain acceleration artifacts.

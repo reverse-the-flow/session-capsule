@@ -139,3 +139,23 @@ Model Plane owns:
 - deciding when a bundle should be exported, imported, pinned, or deleted
 
 This keeps the transport layer standalone while making Model Plane integration practical.
+
+## Model Plane Job Packets
+
+The standalone harness can call the gateway transport API from Model Plane job packets:
+
+```text
+gateway_export_bundle
+gateway_list_bundles
+gateway_download_bundle
+gateway_import_bundle
+gateway_delete_bundle
+```
+
+Examples live under:
+
+```text
+examples/model-plane/gateway-*.example.json
+```
+
+These job packets carry intent and policy inputs. They do not replace the gateway API; they call it.

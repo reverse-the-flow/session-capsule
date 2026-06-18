@@ -19,6 +19,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 from urllib import error, request
+from urllib.parse import quote
 
 
 JSONDict = dict[str, Any]
@@ -254,7 +255,14 @@ Run a job packet:
   py -3 .\\scripts\\capsule_cli.py job run .\\examples\\model-plane\\checkpoint-thread.example.json --dry-run
 
 Gateway health endpoint for launch profiles:
-  /api/capsules/status""",
+  /api/capsules/status
+
+Gateway transport job types:
+  gateway_export_bundle
+  gateway_list_bundles
+  gateway_download_bundle
+  gateway_import_bundle
+  gateway_delete_bundle""",
     "troubleshooting": """Common checks:
 
 No endpoint:
@@ -1949,6 +1957,20 @@ def job_path(base: Path, value: str) -> Path:
     return base / path
 
 
+def supported_job_types() -> set[str]:
+    return {
+        "resume_thread",
+        "checkpoint_thread",
+        "export_thread",
+        "validate_capsule",
+        "gateway_export_bundle",
+        "gateway_list_bundles",
+        "gateway_download_bundle",
+        "gateway_import_bundle",
+        "gateway_delete_bundle",
+    }
+
+
 def validate_job_packet(packet: JSONDict) -> None:
     required = ["schema_version", "job_id", "job_type", "created_at", "params"]
     for key in required:
@@ -1956,7 +1978,7 @@ def validate_job_packet(packet: JSONDict) -> None:
             raise RuntimeError(f"Job packet missing required key: {key}")
     if packet["schema_version"] != "0.1":
         raise RuntimeError("Job packet schema_version must be 0.1")
-    if packet["job_type"] not in {"resume_thread", "checkpoint_thread", "export_thread", "validate_capsule"}:
+    if packet["job_type"] not in supported_job_types():
         raise RuntimeError(f"Unsupported job_type: {packet['job_type']}")
     if not isinstance(packet["params"], dict):
         raise RuntimeError("Job packet params must be an object")
@@ -2002,6 +2024,119 @@ def validate_capsule_job(store: Store, params: JSONDict) -> int:
     if params.get("require_snapshot") and snapshot_ref and not snapshot_exists:
         return 1
     return 0
+
+
+def gateway_base_url(params: JSONDict) -> str:
+    base = str(params.get("gateway_url") or "http://127.0.0.1:8765").rstrip("/")
+    if base.endswith("/v1"):
+        base = base[:-3]
+    return base
+
+
+def gateway_timeout(params: JSONDict) -> float:
+    return float(params.get("timeout", 120.0))
+
+
+def gateway_request_json(method: str, url: str, payload: JSONDict | None, timeout: float) -> JSONDict:
+    data = json.dumps(payload or {}).encode("utf-8") if payload is not None else None
+    headers = {"Content-Type": "application/json"} if payload is not None else {}
+    req = request.Request(url, data=data, headers=headers, method=method)
+    try:
+        with request.urlopen(req, timeout=timeout) as response:
+            body = response.read()
+    except error.HTTPError as exc:
+        body = exc.read()
+        raise RuntimeError(body.decode("utf-8", errors="replace")) from exc
+    if not body:
+        return {}
+    data = json.loads(body.decode("utf-8"))
+    if not isinstance(data, dict):
+        raise RuntimeError("Gateway response was not a JSON object")
+    return data
+
+
+def gateway_download_bundle(params: JSONDict, job_file: Path) -> int:
+    bundle_id = str(require_job_param(params, "bundle_id"))
+    out = job_path(job_file.parent, str(require_job_param(params, "out")))
+    out.parent.mkdir(parents=True, exist_ok=True)
+    url = f"{gateway_base_url(params)}/api/capsules/bundles/{quote(bundle_id)}"
+    try:
+        with request.urlopen(url, timeout=gateway_timeout(params)) as response:
+            body = response.read()
+    except error.HTTPError as exc:
+        raise RuntimeError(exc.read().decode("utf-8", errors="replace")) from exc
+    out.write_bytes(body)
+    print(f"downloaded bundle: {out}")
+    print(f"bundle_id: {bundle_id}")
+    print(f"bytes: {len(body)}")
+    print(f"sha256: {digest_file(out)}")
+    return 0
+
+
+def gateway_import_bundle_job(params: JSONDict, job_file: Path) -> int:
+    base = gateway_base_url(params)
+    timeout = gateway_timeout(params)
+    if "bundle" in params:
+        source = job_path(job_file.parent, str(params["bundle"]))
+        if not source.exists():
+            raise FileNotFoundError(f"Bundle not found: {source}")
+        headers = {"Content-Type": str(params.get("content_type") or "application/vnd.session-capsule.scap")}
+        if params.get("bundle_id"):
+            headers["X-Capsule-Bundle-Id"] = str(params["bundle_id"])
+        if params.get("force"):
+            headers["X-Capsule-Import-Force"] = "true"
+        req = request.Request(
+            f"{base}/api/capsules/import",
+            data=source.read_bytes(),
+            headers=headers,
+            method="POST",
+        )
+        try:
+            with request.urlopen(req, timeout=timeout) as response:
+                data = json.loads(response.read().decode("utf-8"))
+        except error.HTTPError as exc:
+            raise RuntimeError(exc.read().decode("utf-8", errors="replace")) from exc
+        if not isinstance(data, dict):
+            raise RuntimeError("Gateway response was not a JSON object")
+    else:
+        payload = {
+            "bundle_id": str(require_job_param(params, "bundle_id")),
+            "force": bool(params.get("force", False)),
+        }
+        data = gateway_request_json("POST", f"{base}/api/capsules/import", payload, timeout)
+    print(json.dumps(data, indent=2))
+    return 0
+
+
+def gateway_transport_job(job_type: str, params: JSONDict, job_file: Path) -> int:
+    base = gateway_base_url(params)
+    timeout = gateway_timeout(params)
+    if job_type == "gateway_export_bundle":
+        payload = {
+            "thread_id": str(require_job_param(params, "thread_id")),
+            "include_snapshots": bool(params.get("include_snapshots", False)),
+            "redact_transcript": bool(params.get("redact_transcript", False)),
+            "force": bool(params.get("force", False)),
+        }
+        if params.get("bundle_id"):
+            payload["bundle_id"] = str(params["bundle_id"])
+        data = gateway_request_json("POST", f"{base}/api/capsules/export", payload, timeout)
+        print(json.dumps(data, indent=2))
+        return 0
+    if job_type == "gateway_list_bundles":
+        data = gateway_request_json("GET", f"{base}/api/capsules/bundles", None, timeout)
+        print(json.dumps(data, indent=2))
+        return 0
+    if job_type == "gateway_download_bundle":
+        return gateway_download_bundle(params, job_file)
+    if job_type == "gateway_import_bundle":
+        return gateway_import_bundle_job(params, job_file)
+    if job_type == "gateway_delete_bundle":
+        bundle_id = str(require_job_param(params, "bundle_id"))
+        data = gateway_request_json("DELETE", f"{base}/api/capsules/bundles/{quote(bundle_id)}", None, timeout)
+        print(json.dumps(data, indent=2))
+        return 0
+    raise RuntimeError(f"Unsupported gateway transport job_type: {job_type}")
 
 
 def run_job_packet(args: argparse.Namespace) -> int:
@@ -2059,6 +2194,9 @@ def run_job_packet(args: argparse.Namespace) -> int:
 
     if job_type == "validate_capsule":
         return validate_capsule_job(store, params)
+
+    if job_type.startswith("gateway_"):
+        return gateway_transport_job(job_type, params, job_file)
 
     raise RuntimeError(f"Unsupported job_type: {job_type}")
 

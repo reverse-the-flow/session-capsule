@@ -49,6 +49,10 @@ def main() -> None:
     if "/api/capsules/export" not in transport or "application/vnd.session-capsule.scap" not in transport:
         raise AssertionError("transport help did not include gateway bundle API")
 
+    model_plane = run_cli("help", "model-plane")
+    if "gateway_export_bundle" not in model_plane:
+        raise AssertionError("model-plane help did not include gateway transport job types")
+
     print("CLI conceptual help smoke test ok")
 
 

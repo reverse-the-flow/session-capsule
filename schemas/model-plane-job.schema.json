@@ -26,7 +26,12 @@
         "resume_thread",
         "checkpoint_thread",
         "export_thread",
-        "validate_capsule"
+        "validate_capsule",
+        "gateway_export_bundle",
+        "gateway_list_bundles",
+        "gateway_download_bundle",
+        "gateway_import_bundle",
+        "gateway_delete_bundle"
       ]
     },
     "created_at": {
@@ -95,6 +100,18 @@
         },
         "require_snapshot": {
           "type": "boolean"
+        },
+        "gateway_url": {
+          "type": "string"
+        },
+        "bundle_id": {
+          "type": "string"
+        },
+        "bundle": {
+          "type": "string"
+        },
+        "content_type": {
+          "type": "string"
         }
       }
     },
