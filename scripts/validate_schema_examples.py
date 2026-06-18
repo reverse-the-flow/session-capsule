@@ -48,6 +48,7 @@ def validate_schema_files() -> None:
         "thread-ledger.schema.json",
         "endpoint-capabilities.schema.json",
         "model-plane-job.schema.json",
+        "model-plane-gateway-launch.schema.json",
     ]
     for filename in expected:
         schema = load_json(SCHEMAS / filename)
@@ -325,6 +326,85 @@ def validate_model_plane_job(path: Path) -> None:
         require_keys(name, params, ["gateway_url", "bundle_id"])
 
 
+def validate_secret_ref(name: str, data: dict[str, Any]) -> None:
+    require_keys(name, data, ["source", "ref"])
+    if data["source"] not in {"none", "file", "env"}:
+        raise ValidationError(f"{name}.source must be none, file, or env")
+    if data["source"] == "none":
+        if data["ref"] is not None:
+            raise ValidationError(f"{name}.ref must be null when source is none")
+    elif not isinstance(data["ref"], str) or not data["ref"]:
+        raise ValidationError(f"{name}.ref must be a non-empty string when source is file or env")
+    for key in data:
+        if key in {"value", "token_value", "key_value", "secret"}:
+            raise ValidationError(f"{name} must contain only secret references, not secret values")
+
+
+def validate_gateway_launch_profile(path: Path) -> None:
+    data = load_json(path)
+    name = path.name
+    require_keys(name, data, ["schema_version", "profile_id", "profile_type", "created_at", "gateway", "transport", "security"])
+    if data["schema_version"] != "0.1":
+        raise ValidationError(f"{name} schema_version must be 0.1")
+    if data["profile_type"] != "session_capsule_gateway":
+        raise ValidationError(f"{name}.profile_type must be session_capsule_gateway")
+
+    if "command" in data:
+        command = data["command"]
+        if not isinstance(command, dict):
+            raise ValidationError(f"{name}.command must be an object")
+        require_keys(f"{name}.command", command, ["program", "args"])
+        if not isinstance(command["program"], str) or not command["program"]:
+            raise ValidationError(f"{name}.command.program must be a non-empty string")
+        if not isinstance(command["args"], list) or not all(isinstance(item, str) for item in command["args"]):
+            raise ValidationError(f"{name}.command.args must be a string array")
+
+    gateway = data["gateway"]
+    if not isinstance(gateway, dict):
+        raise ValidationError(f"{name}.gateway must be an object")
+    require_keys(
+        f"{name}.gateway",
+        gateway,
+        ["state_dir", "endpoint_id", "host", "port", "checkpoint_mode", "slot", "timeout_seconds", "max_bundle_bytes"],
+    )
+    if gateway["host"] != "127.0.0.1":
+        raise ValidationError(f"{name}.gateway.host should default to 127.0.0.1 for local-first launch profiles")
+    if gateway["checkpoint_mode"] not in {"none", "soft", "hard"}:
+        raise ValidationError(f"{name}.gateway.checkpoint_mode must be none, soft, or hard")
+    if not isinstance(gateway["port"], int) or not 1 <= gateway["port"] <= 65535:
+        raise ValidationError(f"{name}.gateway.port must be a TCP port integer")
+    require_nonnegative_int(f"{name}.gateway.slot", gateway["slot"])
+    require_nonnegative_number(f"{name}.gateway.timeout_seconds", gateway["timeout_seconds"])
+    if not isinstance(gateway["max_bundle_bytes"], str) or not re.fullmatch(r"\d+(\.\d+)?\s*([KMGT]i?B|[KMGT]B|B)?", gateway["max_bundle_bytes"]):
+        raise ValidationError(f"{name}.gateway.max_bundle_bytes must be a byte size string")
+
+    transport = data["transport"]
+    if not isinstance(transport, dict):
+        raise ValidationError(f"{name}.transport must be an object")
+    require_keys(f"{name}.transport", transport, ["openai_base_url", "status_url", "require_status_transport"])
+    if not str(transport["openai_base_url"]).endswith("/v1"):
+        raise ValidationError(f"{name}.transport.openai_base_url should point at the OpenAI-compatible /v1 path")
+    if not str(transport["status_url"]).endswith("/api/capsules/status"):
+        raise ValidationError(f"{name}.transport.status_url should point at /api/capsules/status")
+    require_bool(f"{name}.transport.require_status_transport", transport["require_status_transport"])
+
+    security = data["security"]
+    if not isinstance(security, dict):
+        raise ValidationError(f"{name}.security must be an object")
+    require_keys(f"{name}.security", security, ["request_auth", "bundle_signing"])
+    request_auth = security["request_auth"]
+    if not isinstance(request_auth, dict):
+        raise ValidationError(f"{name}.security.request_auth must be an object")
+    validate_secret_ref(f"{name}.security.request_auth", request_auth)
+    bundle_signing = security["bundle_signing"]
+    if not isinstance(bundle_signing, dict):
+        raise ValidationError(f"{name}.security.bundle_signing must be an object")
+    validate_secret_ref(f"{name}.security.bundle_signing", bundle_signing)
+    if "require_on_import" not in bundle_signing:
+        raise ValidationError(f"{name}.security.bundle_signing is missing require_on_import")
+    require_bool(f"{name}.security.bundle_signing.require_on_import", bundle_signing["require_on_import"])
+
+
 def main() -> None:
     validate_schema_files()
 
@@ -345,7 +425,11 @@ def main() -> None:
     validate_thread(thread, capsule, endpoint)
 
     for path in sorted((EXAMPLES / "model-plane").glob("*.example.json")):
-        validate_model_plane_job(path)
+        data = load_json(path)
+        if data.get("profile_type") == "session_capsule_gateway":
+            validate_gateway_launch_profile(path)
+        else:
+            validate_model_plane_job(path)
 
     print("schema examples ok")
 

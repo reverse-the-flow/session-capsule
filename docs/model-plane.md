@@ -70,6 +70,26 @@ Model Plane job packet
 
 This keeps the standalone CLI and gateway useful without Model Plane. It also lets Model Plane schedule capsule-aware work later without learning runtime-specific slot APIs.
 
+## Gateway Launch Profiles
+
+Model Plane can launch the gateway from a small profile instead of hardcoding CLI flags:
+
+```text
+schemas/model-plane-gateway-launch.schema.json
+examples/model-plane/gateway-launch-profile.example.json
+```
+
+The launch profile describes:
+
+- gateway state directory, endpoint id, host, port, checkpoint mode, slot, timeout, and max bundle upload size
+- OpenAI-compatible base URL and status URL
+- request-auth and bundle-signing secret references
+- whether import requires signed bundles
+
+The profile must contain only secret references, not secret values. For example, it may point at `.capsule-gateway-token` or `CAPSULE_GATEWAY_TOKEN`, but it must not contain the token itself.
+
+After Model Plane launches the gateway, it should call the profile's `transport.status_url` and require the status response to include a `transport` object before enabling bundle upload/download controls.
+
 For UI-driven `.scap` transfer, Model Plane should call the gateway bundle endpoints instead of reimplementing the archive format:
 
 ```text

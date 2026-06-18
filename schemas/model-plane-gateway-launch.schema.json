@@ -1,0 +1,173 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.local/session-capsules/schemas/model-plane-gateway-launch.schema.json",
+  "title": "Session Capsule Model Plane Gateway Launch Profile",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "profile_id",
+    "profile_type",
+    "created_at",
+    "gateway",
+    "transport",
+    "security"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "0.1"
+    },
+    "profile_id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_.:-]+$"
+    },
+    "profile_type": {
+      "type": "string",
+      "const": "session_capsule_gateway"
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "command": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["program", "args"],
+      "properties": {
+        "program": {
+          "type": "string"
+        },
+        "args": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "gateway": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "state_dir",
+        "endpoint_id",
+        "host",
+        "port",
+        "checkpoint_mode",
+        "slot",
+        "timeout_seconds",
+        "max_bundle_bytes"
+      ],
+      "properties": {
+        "state_dir": {
+          "type": "string"
+        },
+        "endpoint_id": {
+          "type": "string"
+        },
+        "host": {
+          "type": "string"
+        },
+        "port": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535
+        },
+        "checkpoint_mode": {
+          "type": "string",
+          "enum": ["none", "soft", "hard"]
+        },
+        "slot": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "default_prefill": {
+          "type": ["string", "null"]
+        },
+        "default_thread_prefix": {
+          "type": "string"
+        },
+        "timeout_seconds": {
+          "type": "number",
+          "minimum": 0
+        },
+        "max_bundle_bytes": {
+          "type": "string"
+        }
+      }
+    },
+    "transport": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "openai_base_url",
+        "status_url",
+        "require_status_transport"
+      ],
+      "properties": {
+        "openai_base_url": {
+          "type": "string"
+        },
+        "status_url": {
+          "type": "string"
+        },
+        "require_status_transport": {
+          "type": "boolean"
+        }
+      }
+    },
+    "security": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["request_auth", "bundle_signing"],
+      "properties": {
+        "request_auth": {
+          "$ref": "#/$defs/secret_ref"
+        },
+        "bundle_signing": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["source", "ref", "require_on_import"],
+          "properties": {
+            "source": {
+              "type": "string",
+              "enum": ["none", "file", "env"]
+            },
+            "ref": {
+              "type": ["string", "null"]
+            },
+            "key_id": {
+              "type": ["string", "null"]
+            },
+            "require_on_import": {
+              "type": "boolean"
+            }
+          }
+        }
+      }
+    },
+    "notes": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "$defs": {
+    "secret_ref": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["source", "ref"],
+      "properties": {
+        "source": {
+          "type": "string",
+          "enum": ["none", "file", "env"]
+        },
+        "ref": {
+          "type": ["string", "null"]
+        }
+      }
+    }
+  }
+}

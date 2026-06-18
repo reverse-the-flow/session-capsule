@@ -335,6 +335,10 @@ Signed export job packets:
 Protected gateway transport jobs:
   py -3 .\\scripts\\capsule_cli.py job run .\\examples\\model-plane\\gateway-download-bundle.example.json --gateway-auth-token-file .\\capsule-gateway-token
 
+Gateway launch profile:
+  schemas/model-plane-gateway-launch.schema.json
+  examples/model-plane/gateway-launch-profile.example.json
+
 Gateway health endpoint for launch profiles:
   /api/capsules/status
 

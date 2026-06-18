@@ -57,7 +57,7 @@ That matters most for:
 - [docs/mvp-plan.md](/X:/Experiments/session-capsules/docs/mvp-plan.md) - smallest viable architecture, controller/runtime split, and ephemeral-runtime constraint
 - [docs/roadmap.md](/X:/Experiments/session-capsules/docs/roadmap.md) - staged implementation path from CLI harness to local gateway and later integrations
 - [schemas/](/X:/Experiments/session-capsules/schemas) - draft JSON Schemas for capsule manifests, thread ledgers, and endpoint capabilities
-- [examples/](/X:/Experiments/session-capsules/examples) - matching example ledger, manifest, endpoint capability, integration, and Model Plane job documents
+- [examples/](/X:/Experiments/session-capsules/examples) - matching example ledger, manifest, endpoint capability, integration, Model Plane job, and gateway launch-profile documents
 - [scripts/simulate_capsules.py](/X:/Experiments/session-capsules/scripts/simulate_capsules.py) - simple cost-growth simulator
 - [scripts/llama_slot_workflow.ps1](/X:/Experiments/session-capsules/scripts/llama_slot_workflow.ps1) - prototype workflow for local `llama.cpp` slot save/restore
 - [scripts/benchmark_llama_capsules.py](/X:/Experiments/session-capsules/scripts/benchmark_llama_capsules.py) - paired replay/save/restore benchmark harness that writes inspectable run folders

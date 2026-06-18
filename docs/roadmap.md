@@ -386,6 +386,7 @@ Recommended order:
 11. Stage 10: gateway bundle transport
 12. Stage 11: bundle integrity, signing, and sealing
 13. Stage 12: gateway access control
+14. Stage 13: Model Plane gateway launch profile
 
 Do not start with gateway or Model Plane. They become simpler after the ledger, manifest, and CLI lifecycle are real.
 
@@ -516,6 +517,32 @@ Initial status:
 - `capsule_cli.py job run` can call protected gateway transport jobs with `--gateway-auth-token-file TOKENFILE` or `--gateway-auth-token-env ENVNAME`.
 - `/api/capsules/status` reports `auth_required` without exposing the token.
 - `scripts/test_capsule_gateway_fake_backend.py` verifies unauthenticated rejection and authenticated signed transport.
+
+## Stage 13: Model Plane Gateway Launch Profile
+
+Goal: Let Model Plane launch the capsule gateway from a small, versioned profile instead of hardcoding a shell command or absorbing gateway internals.
+
+Implementation steps:
+
+- Add a gateway launch-profile schema.
+- Add an example local `llama.cpp` gateway launch profile.
+- Keep tokens and signing keys out of the profile; allow only secret references.
+- Map profile values directly to gateway launch flags.
+- Require Model Plane to read `/api/capsules/status` after launch and verify the status `transport` object before enabling upload/download controls.
+- Validate the profile in the repo smoke suite.
+
+Exit criteria:
+
+- Model Plane can read a profile, start the gateway, and know which URL to health-check.
+- The profile defines gateway state directory, endpoint, host, port, checkpoint mode, slot, timeout, upload cap, auth reference, and bundle-signing reference.
+- The profile does not contain gateway tokens or signing key values.
+
+Initial status:
+
+- `schemas/model-plane-gateway-launch.schema.json` defines the first launch-profile contract.
+- `examples/model-plane/gateway-launch-profile.example.json` shows a local `llama.cpp` hard-checkpoint gateway profile.
+- `scripts/validate_schema_examples.py` validates launch profiles separately from job packets.
+- `docs/model-plane.md` and `docs/configuration.md` explain how Model Plane maps the profile to gateway launch flags and status discovery.
 
 ## First Three Implementation Tickets
 

@@ -1,0 +1,44 @@
+{
+  "schema_version": "0.1",
+  "profile_id": "local-llamacpp-capsule-gateway",
+  "profile_type": "session_capsule_gateway",
+  "created_at": "2026-06-18T12:00:00-05:00",
+  "command": {
+    "program": "py",
+    "args": ["-3", "scripts/capsule_gateway.py"]
+  },
+  "gateway": {
+    "state_dir": ".capsules",
+    "endpoint_id": "local-llamacpp",
+    "host": "127.0.0.1",
+    "port": 8765,
+    "checkpoint_mode": "hard",
+    "slot": 0,
+    "default_prefill": "user_default",
+    "default_thread_prefix": "gateway",
+    "timeout_seconds": 120,
+    "max_bundle_bytes": "5GB"
+  },
+  "transport": {
+    "openai_base_url": "http://127.0.0.1:8765/v1",
+    "status_url": "http://127.0.0.1:8765/api/capsules/status",
+    "require_status_transport": true
+  },
+  "security": {
+    "request_auth": {
+      "source": "file",
+      "ref": ".capsule-gateway-token"
+    },
+    "bundle_signing": {
+      "source": "file",
+      "ref": ".capsule-signing.key",
+      "key_id": "local",
+      "require_on_import": true
+    }
+  },
+  "notes": [
+    "This is a Model Plane launch profile, not a job packet.",
+    "The profile carries secret references only. It must not contain the gateway token or signing key value.",
+    "After launch, Model Plane should read transport.status_url and require the response transport object before enabling upload/download controls."
+  ]
+}

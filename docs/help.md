@@ -238,6 +238,13 @@ Model Plane should supervise the gateway, not absorb it.
 
 Model Plane owns launch profiles, lifecycle, health checks, and job routing. The gateway owns the request path and capsule restore/checkpoint behavior. The model runtime owns model weights, live KV cache, slots, and generation.
 
+Gateway launch profile artifacts:
+
+- `schemas/model-plane-gateway-launch.schema.json`
+- `examples/model-plane/gateway-launch-profile.example.json`
+
+The launch profile stores gateway wiring and secret references only. It does not store gateway tokens or signing key values.
+
 Supported job packet types:
 
 - `resume_thread`

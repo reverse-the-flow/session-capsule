@@ -13,6 +13,7 @@ It performs:
 - Python syntax compilation
 - ASCII scan for repo text artifacts
 - schema/example validation, including restore-failure schema fields
+- Model Plane gateway launch-profile schema/example validation
 - conceptual CLI help smoke test
 - fake `llama.cpp` hard capsule save/restore, shutdown job, and failed-restore fallback smoke test
 - `.scap` export/import/verify, dry-run sizing, endpoint compatibility warning, signature, and tamper-rejection smoke test

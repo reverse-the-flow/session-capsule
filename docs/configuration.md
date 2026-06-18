@@ -137,6 +137,35 @@ Signature keys are secret inputs, not persistent settings:
 
 For the gateway and Model Plane job runner, these are launch-profile or command-runner values. Do not put signing keys or gateway auth tokens in `settings.json`, endpoint records, or Model Plane job packets.
 
+## Model Plane Launch Profile
+
+Model Plane can keep gateway launch wiring in a profile instead of treating the gateway as an opaque shell command:
+
+```text
+schemas/model-plane-gateway-launch.schema.json
+examples/model-plane/gateway-launch-profile.example.json
+```
+
+The profile maps to the gateway launch flags above:
+
+| Profile key | Gateway flag |
+| --- | --- |
+| `gateway.state_dir` | `--state-dir` |
+| `gateway.endpoint_id` | `--endpoint` |
+| `gateway.host` | `--host` |
+| `gateway.port` | `--port` |
+| `gateway.checkpoint_mode` | `--checkpoint-mode` |
+| `gateway.slot` | `--slot` |
+| `gateway.default_prefill` | `--default-prefill` |
+| `gateway.timeout_seconds` | `--timeout` |
+| `gateway.max_bundle_bytes` | `--max-bundle-bytes` |
+| `security.request_auth` | `--auth-token-file` or `--auth-token-env` |
+| `security.bundle_signing` | `--signature-key-file`, `--signature-key-env`, `--signature-key-id`, and `--require-bundle-signature` |
+
+The profile stores secret references only. It may say `source=file` and `ref=.capsule-gateway-token`; it must not store the token or signing key value.
+
+After launch, Model Plane should read `transport.status_url` and require the response's versioned `transport` object before enabling `.scap` upload/download controls.
+
 ## Endpoint Records
 
 Endpoint settings are neither launch flags nor global config. They are durable endpoint records under:
