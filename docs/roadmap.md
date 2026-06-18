@@ -510,8 +510,10 @@ Initial status:
 - `capsule_gateway.py --signature-key-file KEY --require-bundle-signature` applies signing and required verification to gateway transport.
 - `import BUNDLE.scap` verifies bundles that include `file_digests` before extracting state files.
 - `seal BUNDLE.scap --age-recipient RECIPIENT --out BUNDLE.sealed.scap` wraps an externally encrypted payload in an inspectable sealed envelope.
+- `seal BUNDLE.scap --age-recipient-file RECIPIENT_FILE --out BUNDLE.sealed.scap` lets launchers reference public recipient material without embedding it in job packets.
 - `unseal BUNDLE.sealed.scap --age-identity IDENTITY --out BUNDLE.scap` decrypts the payload and verifies the recovered digest before import.
 - `bundle-policy BUNDLE.sealed.scap --preset sealed` passes when the envelope records encryption metadata.
+- `docs/sealing.md` recommends an external age-compatible CLI backend, project-local public recipient files, operator-private identity files outside `.capsules`, and references rather than secret values in Model Plane packets or gateway profiles.
 - `scripts/test_capsule_cli_export_import.py` validates successful verification, signature checks, and tamper rejection.
 - `scripts/test_capsule_cli_export_import.py` validates the external sealing command contract with a fake age-compatible backend.
 - Hosted/provider-side sealed capsules and user-carried runtime blobs are not implemented yet; redaction is metadata-only and not cryptographic sealing.
@@ -722,4 +724,3 @@ Initial status:
 
 - Which live `llama.cpp` server builds should be captured with `endpoint doctor` and listed in the endpoint matrix?
 - Which native opencode hook can replace generated provider configs once opencode exposes stable per-session metadata?
-- Which production age-compatible backend and key-management UX should be recommended for sealed `.scap` transport?

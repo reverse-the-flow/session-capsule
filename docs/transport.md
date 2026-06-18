@@ -340,12 +340,12 @@ The digest index proves archive integrity for the exported files. HMAC signing p
 Seal a bundle with an external age-compatible command:
 
 ```powershell
-py -3 .\scripts\capsule_cli.py seal .\research-loop.scap --out .\research-loop.sealed.scap --age-recipient age1...
+py -3 .\scripts\capsule_cli.py seal .\research-loop.scap --out .\research-loop.sealed.scap --age-recipient-file .\.capsules\security\recipients\local.agepub
 py -3 .\scripts\capsule_cli.py bundle-policy .\research-loop.sealed.scap --preset sealed
-py -3 .\scripts\capsule_cli.py unseal .\research-loop.sealed.scap --out .\research-loop.unsealed.scap --age-identity .\age-identity.txt
+py -3 .\scripts\capsule_cli.py unseal .\research-loop.sealed.scap --out .\research-loop.unsealed.scap --age-identity C:\Users\you\.config\age\keys.txt
 ```
 
-The sealed file is a small inspectable envelope containing `manifest.json` plus an externally encrypted payload. Import requires an explicit `unseal` step first.
+The sealed file is a small inspectable envelope containing `manifest.json` plus an externally encrypted payload. Import requires an explicit `unseal` step first. See [docs/sealing.md](/X:/Experiments/session-capsules/docs/sealing.md) for the recommended age-compatible backend and key-reference policy.
 
 ## Delete
 

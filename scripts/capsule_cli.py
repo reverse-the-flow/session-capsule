@@ -115,7 +115,7 @@ Core objects:
   prefill    reusable root capsule for stable user/project context
   gateway    local OpenAI-compatible request-path layer
   transport  gateway .scap upload/download API
-  security   bundle integrity now, signing/encryption later
+  security   bundle integrity, signing, and local sealing
 
 Start here:
   py -3 .\\scripts\\capsule_cli.py config init
@@ -129,6 +129,7 @@ More:
   capsule help integrations
   capsule help transport
   capsule help security
+  capsule help sealing
   capsule help storage
   capsule help state
   capsule help model-plane""",
@@ -408,7 +409,38 @@ Key handling:
   --signature-key-env reads a key from an environment variable
   keys are not written into .capsules state
 
-HMAC signing proves possession of the shared key. Sealing delegates encryption to an external age-compatible command instead of implementing local crypto.""",
+HMAC signing proves possession of the shared key. Sealing delegates encryption to an external age-compatible command instead of implementing local crypto.
+
+More:
+  capsule help sealing""",
+    "sealing": """Sealed .scap envelopes use an external age-compatible command.
+
+Recommended backend:
+  age CLI or an age-compatible executable on PATH
+
+Recommended key handling:
+  recipient files may live with project launch policy because they contain public key material
+  identity files are private keys and should live outside .capsules, ideally in an operator secret path or OS-managed secret store
+  job packets and gateway launch profiles should carry references only, not key values
+  sealed .scap bundles must be explicitly unsealed before import
+
+Seal with an inline public recipient:
+  py -3 .\\scripts\\capsule_cli.py seal .\\research-loop.scap --out .\\research-loop.sealed.scap --age-recipient age1...
+
+Seal with a recipient file:
+  py -3 .\\scripts\\capsule_cli.py seal .\\research-loop.scap --out .\\research-loop.sealed.scap --age-recipient-file .\\.capsules\\security\\recipients\\local.agepub
+
+Check before sharing or storing:
+  py -3 .\\scripts\\capsule_cli.py bundle-policy .\\research-loop.sealed.scap --preset sealed
+  py -3 .\\scripts\\capsule_cli.py gateway store --url http://127.0.0.1:8765 --bundle .\\research-loop.sealed.scap --policy-preset sealed
+
+Unseal with an operator-private identity file:
+  py -3 .\\scripts\\capsule_cli.py unseal .\\research-loop.sealed.scap --out .\\research-loop.unsealed.scap --age-identity C:\\Users\\you\\.config\\age\\keys.txt
+
+Boundary:
+  local sealed envelopes are implemented
+  hosted/provider-side sealed capsules are future work
+  this repo delegates crypto to age instead of implementing cryptographic primitives""",
     "model-plane": """Model Plane should supervise Session Capsules, not become the gateway.
 
 Model Plane owns:
@@ -2910,6 +2942,24 @@ def run_external_crypto(command: list[str]) -> None:
         raise RuntimeError(f"External encryption command failed: {message}")
 
 
+def age_recipient_from_args(args: argparse.Namespace) -> tuple[str, str | None]:
+    inline_recipient = getattr(args, "age_recipient", None)
+    recipient_file = getattr(args, "age_recipient_file", None)
+    if inline_recipient and recipient_file:
+        raise RuntimeError("Use only one age recipient source: --age-recipient or --age-recipient-file")
+    if recipient_file:
+        recipient_path = Path(recipient_file)
+        recipient = recipient_path.read_text(encoding="utf-8").strip()
+        if not recipient:
+            raise RuntimeError(f"age recipient file is empty: {recipient_path}")
+        return recipient, str(recipient_path)
+    if inline_recipient:
+        recipient = str(inline_recipient).strip()
+        if recipient:
+            return recipient, None
+    raise RuntimeError("Seal requires --age-recipient or --age-recipient-file")
+
+
 def seal_bundle(args: argparse.Namespace) -> int:
     source = args.bundle.resolve()
     out_path = args.out.resolve()
@@ -2921,6 +2971,7 @@ def seal_bundle(args: argparse.Namespace) -> int:
     if out_path.exists() and not args.force:
         raise FileExistsError(f"Sealed bundle already exists: {out_path}")
     out_path.parent.mkdir(parents=True, exist_ok=True)
+    age_recipient, age_recipient_file = age_recipient_from_args(args)
 
     with tempfile.TemporaryDirectory(prefix="session-capsules-seal-") as temp:
         encrypted_payload = Path(temp) / "payload.scap.age"
@@ -2928,7 +2979,7 @@ def seal_bundle(args: argparse.Namespace) -> int:
             [
                 args.age_bin,
                 "-r",
-                args.age_recipient,
+                age_recipient,
                 "-o",
                 str(encrypted_payload),
                 str(source),
@@ -2949,7 +3000,9 @@ def seal_bundle(args: argparse.Namespace) -> int:
                     "backend": "age",
                     "mode": "recipient",
                     "payload_ref": "payload.scap.age",
-                    "recipient": args.age_recipient,
+                    "recipient": age_recipient,
+                    "recipient_source": "file" if age_recipient_file else "inline",
+                    "recipient_file": age_recipient_file,
                     "source_bundle_sha256": digest_file(source),
                 },
                 "notes": [
@@ -4627,7 +4680,8 @@ def build_parser() -> argparse.ArgumentParser:
     seal_cmd = subcommands.add_parser("seal", help="Seal a .scap bundle with an external age-compatible encryption command.")
     seal_cmd.add_argument("bundle", type=Path)
     seal_cmd.add_argument("--out", type=Path, required=True)
-    seal_cmd.add_argument("--age-recipient", required=True, help="age recipient string. This is public key material.")
+    seal_cmd.add_argument("--age-recipient", help="age recipient string. This is public key material.")
+    seal_cmd.add_argument("--age-recipient-file", type=Path, help="File containing an age recipient string. This is public key material.")
     seal_cmd.add_argument("--age-bin", default="age", help="age-compatible executable to run.")
     seal_cmd.add_argument("--force", action="store_true")
     seal_cmd.set_defaults(func=seal_bundle)

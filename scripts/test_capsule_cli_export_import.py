@@ -62,11 +62,13 @@ def main() -> None:
         sealed_bundle_path = temp_path / "thread-sealed.scap"
         unsealed_bundle_path = temp_path / "thread-unsealed.scap"
         signature_key_path = temp_path / "signature.key"
+        age_recipient_path = temp_path / "age-recipient.txt"
         age_identity_path = temp_path / "age-identity.txt"
         fake_age_path = temp_path / "fake-age.cmd"
 
         prefill_path.write_text("Stable source-only user prefill.", encoding="utf-8")
         signature_key_path.write_text("test-local-signing-key", encoding="utf-8")
+        age_recipient_path.write_text("age1testrecipient\n", encoding="utf-8")
         age_identity_path.write_text("AGE-SECRET-KEY-test\n", encoding="utf-8")
         fake_age_path.write_text(
             "\n".join(
@@ -193,8 +195,8 @@ def main() -> None:
             str(bundle_path),
             "--out",
             str(sealed_bundle_path),
-            "--age-recipient",
-            "age1testrecipient",
+            "--age-recipient-file",
+            str(age_recipient_path),
             "--age-bin",
             str(fake_age_path),
         )
@@ -205,6 +207,11 @@ def main() -> None:
             raise AssertionError("sealed bundle still required trusted transport")
         if sealed_inspect_payload.get("integrity", {}).get("encryption", {}).get("backend") != "age":
             raise AssertionError("sealed bundle did not record age backend metadata")
+        encryption = sealed_inspect_payload.get("integrity", {}).get("encryption", {})
+        if encryption.get("recipient_source") != "file":
+            raise AssertionError("sealed bundle did not record recipient file source")
+        if encryption.get("recipient") != "age1testrecipient":
+            raise AssertionError("sealed bundle did not record recipient from recipient file")
         sealed_policy = run_cli(source_state, "bundle-policy", str(sealed_bundle_path), "--preset", "sealed")
         if "policy passed: yes" not in sealed_policy.stdout:
             raise AssertionError("sealed bundle did not pass sealed policy")

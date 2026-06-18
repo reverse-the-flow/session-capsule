@@ -12,7 +12,7 @@ prefill    = reusable root context
 gateway    = local OpenAI-compatible request-path layer
 integration = thin client config for Open WebUI, opencode, and local UIs
 transport  = gateway API for .scap upload/download
-security   = bundle integrity now, signing/encryption later
+security   = bundle integrity, signing, and local sealing
 config     = persistent policy for capsule state
 ```
 
@@ -85,6 +85,7 @@ The CLI help topics are:
 - `state`
 - `bundles`
 - `security`
+- `sealing`
 - `model-plane`
 - `troubleshooting`
 
@@ -311,9 +312,11 @@ py -3 .\scripts\capsule_cli.py verify .\research-loop.scap --signature-key-file 
 Seal and unseal with an external age-compatible command:
 
 ```powershell
-py -3 .\scripts\capsule_cli.py seal .\research-loop.scap --out .\research-loop.sealed.scap --age-recipient age1...
-py -3 .\scripts\capsule_cli.py unseal .\research-loop.sealed.scap --out .\research-loop.unsealed.scap --age-identity .\age-identity.txt
+py -3 .\scripts\capsule_cli.py seal .\research-loop.scap --out .\research-loop.sealed.scap --age-recipient-file .\.capsules\security\recipients\local.agepub
+py -3 .\scripts\capsule_cli.py unseal .\research-loop.sealed.scap --out .\research-loop.unsealed.scap --age-identity C:\Users\you\.config\age\keys.txt
 ```
+
+Use `capsule help sealing` or [docs/sealing.md](/X:/Experiments/session-capsules/docs/sealing.md) for the key-reference policy. Public recipient files may be project launch policy. Private identity files should live outside `.capsules`; job packets and gateway profiles should carry references only.
 
 Preview export size without writing:
 

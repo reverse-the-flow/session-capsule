@@ -48,6 +48,7 @@ That matters most for:
 - [docs/protocol.md](/X:/Experiments/session-capsules/docs/protocol.md) - manifest, ledger, reload order, storage modes, and request-path integration model
 - [docs/configuration.md](/X:/Experiments/session-capsules/docs/configuration.md) - persistent settings, launch flags, storage budget, pinning, and GC
 - [docs/transport.md](/X:/Experiments/session-capsules/docs/transport.md) - gateway `.scap` upload/download API for Model Plane and local UI integration
+- [docs/sealing.md](/X:/Experiments/session-capsules/docs/sealing.md) - sealed bundle transport, age-compatible backend, and key-reference policy
 - [docs/integrations.md](/X:/Experiments/session-capsules/docs/integrations.md) - thin Open WebUI and opencode integration guidance for the local gateway
 - [docs/model-plane.md](/X:/Experiments/session-capsules/docs/model-plane.md) - Model Plane boundary and job-packet contract
 - [docs/verification.md](/X:/Experiments/session-capsules/docs/verification.md) - smoke-test command and verification boundary
@@ -190,12 +191,12 @@ py -3 .\scripts\capsule_cli.py export --thread research-loop-small --out .\resea
 py -3 .\scripts\capsule_cli.py verify .\research-loop-small.scap --signature-key-file .\capsule-signing.key --require-signature
 ```
 
-Sealed envelopes delegate encryption to an external age-compatible command:
+Sealed envelopes delegate encryption to an external age-compatible command. Public recipient files may be referenced from project launch policy; private identity files should stay outside `.capsules`.
 
 ```powershell
-py -3 .\scripts\capsule_cli.py seal .\research-loop-small.scap --out .\research-loop-small.sealed.scap --age-recipient age1...
+py -3 .\scripts\capsule_cli.py seal .\research-loop-small.scap --out .\research-loop-small.sealed.scap --age-recipient-file .\.capsules\security\recipients\local.agepub
 py -3 .\scripts\capsule_cli.py bundle-policy .\research-loop-small.sealed.scap --preset sealed
-py -3 .\scripts\capsule_cli.py unseal .\research-loop-small.sealed.scap --out .\research-loop-small.unsealed.scap --age-identity .\age-identity.txt
+py -3 .\scripts\capsule_cli.py unseal .\research-loop-small.sealed.scap --out .\research-loop-small.unsealed.scap --age-identity C:\Users\you\.config\age\keys.txt
 ```
 
 The gateway can apply the same policy to upload/download transport:

@@ -40,6 +40,7 @@ def main() -> None:
         "storage",
         "state",
         "security",
+        "sealing",
         "model-plane",
         "troubleshooting",
     ]:
@@ -151,6 +152,17 @@ def main() -> None:
         or "bundle-policy" not in security
     ):
         raise AssertionError("security help did not explain integrity boundary")
+    if "capsule help sealing" not in security:
+        raise AssertionError("security help did not point to sealing help")
+
+    sealing = run_cli("help", "sealing")
+    if (
+        "--age-recipient-file" not in sealing
+        or "--age-identity" not in sealing
+        or "gateway store" not in sealing
+        or "hosted/provider-side sealed capsules are future work" not in sealing
+    ):
+        raise AssertionError("sealing help did not explain key-reference transport boundary")
 
     troubleshooting = run_cli("help", "troubleshooting")
     if "restore_failed" not in troubleshooting:
