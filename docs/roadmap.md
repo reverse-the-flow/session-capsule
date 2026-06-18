@@ -448,7 +448,7 @@ Implementation steps:
 - Verify digest-indexed bundles before import extraction.
 - Reject duplicate zip entries.
 - Keep digest verification separate from cryptographic signing.
-- Add a later signature envelope for authenticity.
+- Add a signature envelope for shared-key authenticity.
 - Add a later encryption or sealed-blob envelope for user-carried capsules.
 - Keep model weights outside the capsule envelope.
 
@@ -456,16 +456,20 @@ Exit criteria:
 
 - A user can verify that a `.scap` bundle's entries match the exported manifest.
 - Import fails before extraction if a digest-indexed bundle is corrupted or contains duplicate entries.
-- The roadmap clearly distinguishes implemented integrity from future signing and encryption.
+- A user can sign a `.scap` bundle with an explicit local key source.
+- The roadmap clearly distinguishes implemented integrity/signing from future encryption.
 
 Initial status:
 
 - New `.scap` exports include `integrity.file_digest_algorithm = sha256`.
 - New `.scap` exports include `file_digests` for every zip entry except `manifest.json`.
 - `capsule_cli.py verify BUNDLE.scap` verifies the file digest index.
+- `export --signature-key-file KEY --signature-key-id ID` writes an optional HMAC-SHA256 signature.
+- `verify --signature-key-file KEY --require-signature` verifies the bundle signature.
+- `import --signature-key-file KEY --require-signature` verifies a required signature before extraction.
 - `import BUNDLE.scap` verifies bundles that include `file_digests` before extracting state files.
-- `scripts/test_capsule_cli_export_import.py` validates successful verification and tamper rejection.
-- Cryptographic signatures, encryption, and sealed user-carried blobs are not implemented yet.
+- `scripts/test_capsule_cli_export_import.py` validates successful verification, signature checks, and tamper rejection.
+- Encryption and sealed user-carried blobs are not implemented yet.
 
 ## First Three Implementation Tickets
 

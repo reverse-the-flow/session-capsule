@@ -182,12 +182,21 @@ Verify a bundle:
 py -3 .\scripts\capsule_cli.py verify .\research-loop.scap
 ```
 
+Sign and verify with an explicit local key file:
+
+```powershell
+py -3 .\scripts\capsule_cli.py export --thread research-loop --out .\research-loop.scap --signature-key-file .\capsule-signing.key --signature-key-id local
+py -3 .\scripts\capsule_cli.py verify .\research-loop.scap --signature-key-file .\capsule-signing.key --require-signature
+```
+
 Import verifies bundles that include `file_digests` and rejects duplicate or digest-mismatched entries.
 
 Current boundary:
 
 - implemented: digest-based integrity checks
-- not implemented yet: cryptographic signing
+- implemented: optional HMAC-SHA256 signatures
+- key sources: `--signature-key-file` or `--signature-key-env`
+- keys are not stored in `.capsules`
 - not implemented yet: encryption or sealed user-carried blobs
 
 ## Model Plane

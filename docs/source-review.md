@@ -12,7 +12,7 @@ Durable requirements extracted from those notes:
 - Generation settings such as temperature, seed, top-p, and token budget are not part of the saved prefix state and can vary after restore.
 - Full snapshots plus transcript diffs are the right initial implementation. Binary KV diffs are a later optimization.
 - User/project prefill capsules are useful root states for repeated context.
-- Bundle integrity, encryption, signatures, and user-carried sealed blobs are important capabilities, but signing/sealing should not block the local MVP.
+- Bundle integrity, signatures, encryption, and user-carried sealed blobs are important capabilities, but encryption/sealing should not block the local MVP.
 - Passive watching is not enough for reliable resume. The capsule layer belongs in the request path.
 
 ## Current Repository Coverage

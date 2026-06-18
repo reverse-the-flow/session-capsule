@@ -118,7 +118,13 @@ Verify a bundle before upload or import:
 py -3 .\scripts\capsule_cli.py verify .\research-loop.scap
 ```
 
-This proves archive integrity for the exported files. It does not prove who created the bundle.
+Verify a signed bundle with an explicit key:
+
+```powershell
+py -3 .\scripts\capsule_cli.py verify .\research-loop.scap --signature-key-file .\capsule-signing.key --require-signature
+```
+
+The digest index proves archive integrity for the exported files. HMAC signing proves possession of the shared signing key.
 
 ## Delete
 
@@ -159,17 +165,18 @@ This keeps the transport layer standalone while making Model Plane integration p
 Implemented now:
 
 - per-entry SHA-256 file digests in bundle `manifest.json`
+- optional HMAC-SHA256 signatures in bundle `manifest.json`
 - `capsule verify BUNDLE.scap`
 - import-time digest verification for bundles that carry `file_digests`
 - duplicate zip-entry rejection
+- required signature verification with `--require-signature`
 
 Not implemented yet:
 
-- cryptographic signatures
 - encryption
 - sealed user-carried blobs
 
-Those later envelope features should build on the digest index instead of replacing it.
+Encryption and sealed-blob features should build on the digest and signature envelope instead of replacing it.
 
 ## Model Plane Job Packets
 

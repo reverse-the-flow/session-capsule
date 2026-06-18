@@ -113,6 +113,18 @@ These should stay as launch-time values because they describe the current proces
 | `--timeout` | `120` | Network/runtime timeout for this launch. |
 | `--max-bundle-bytes` | `5GB` | Maximum raw `.scap` upload accepted by this gateway process. |
 
+## Secret Inputs
+
+Signature keys are per-command secret inputs, not persistent settings:
+
+| Setting | Example | Why |
+| --- | --- | --- |
+| `--signature-key-file` | `.capsule-signing.key` | Reads a local signing key for export/import/verify without storing it in `.capsules`. |
+| `--signature-key-env` | `CAPSULE_SIGNING_KEY` | Reads a signing key from the process environment. |
+| `--signature-key-id` | `local` | Non-secret label written into signed bundle metadata. |
+
+Do not put signing keys in `settings.json` or endpoint records.
+
 ## Endpoint Records
 
 Endpoint settings are neither launch flags nor global config. They are durable endpoint records under:
@@ -142,6 +154,7 @@ There is enough configuration surface for a real help view now:
 - thread identity headers
 - prefill selection
 - gateway bundle transport
+- bundle signature key handling
 - Model Plane job packets
 - storage stats, pinning, and GC
 

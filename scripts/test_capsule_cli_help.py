@@ -54,7 +54,7 @@ def main() -> None:
         raise AssertionError("model-plane help did not include gateway transport job types")
 
     security = run_cli("help", "security")
-    if "Signing and encryption are future envelope layers" not in security:
+    if "optional HMAC-SHA256 bundle signatures" not in security or "keys are not written into .capsules state" not in security:
         raise AssertionError("security help did not explain integrity boundary")
 
     print("CLI conceptual help smoke test ok")

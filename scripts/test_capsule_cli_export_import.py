@@ -51,10 +51,14 @@ def main() -> None:
         temp_path = Path(temp)
         source_state = temp_path / "source" / ".capsules"
         imported_state = temp_path / "imported" / ".capsules"
+        signed_import_state = temp_path / "signed-imported" / ".capsules"
         prefill_path = temp_path / "prefill.md"
         bundle_path = temp_path / "thread.scap"
+        signed_bundle_path = temp_path / "thread-signed.scap"
+        signature_key_path = temp_path / "signature.key"
 
         prefill_path.write_text("Stable source-only user prefill.", encoding="utf-8")
+        signature_key_path.write_text("test-local-signing-key", encoding="utf-8")
 
         run_cli(
             source_state,
@@ -143,6 +147,57 @@ def main() -> None:
         mismatch_failure = run_cli_failure(source_state, "verify", str(mismatched_bundle))
         if "mismatched" not in mismatch_failure.stderr:
             raise AssertionError("mismatched bundle did not fail digest verification")
+
+        unsigned_signature_failure = run_cli_failure(source_state, "verify", str(bundle_path), "--require-signature", "--signature-key-file", str(signature_key_path))
+        if "Bundle signature is not present" not in unsigned_signature_failure.stderr:
+            raise AssertionError("unsigned bundle did not fail required signature verification")
+
+        run_cli(
+            source_state,
+            "export",
+            "--thread",
+            "export-thread",
+            "--out",
+            str(signed_bundle_path),
+            "--signature-key-file",
+            str(signature_key_path),
+            "--signature-key-id",
+            "test-key",
+        )
+        signed_verify = run_cli(
+            source_state,
+            "verify",
+            str(signed_bundle_path),
+            "--signature-key-file",
+            str(signature_key_path),
+            "--require-signature",
+        )
+        if "signature: verified" not in signed_verify.stdout:
+            raise AssertionError("signed bundle did not verify with the expected key")
+        wrong_key_path = temp_path / "wrong-signature.key"
+        wrong_key_path.write_text("wrong-key", encoding="utf-8")
+        wrong_key_failure = run_cli_failure(
+            source_state,
+            "verify",
+            str(signed_bundle_path),
+            "--signature-key-file",
+            str(wrong_key_path),
+            "--require-signature",
+        )
+        if "Bundle signature verification failed" not in wrong_key_failure.stderr:
+            raise AssertionError("signed bundle did not reject the wrong signature key")
+
+        run_cli(
+            signed_import_state,
+            "import",
+            str(signed_bundle_path),
+            "--signature-key-file",
+            str(signature_key_path),
+            "--require-signature",
+        )
+        signed_imported_ledger = signed_import_state / "threads" / "export-thread" / "thread-ledger.json"
+        if not signed_imported_ledger.exists():
+            raise AssertionError("signed import did not create thread ledger")
 
     print(".scap export/import smoke test ok")
 

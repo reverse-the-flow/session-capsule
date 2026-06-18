@@ -8,8 +8,11 @@ transcripts, soft checkpoints, and local llama.cpp hard checkpoints.
 from __future__ import annotations
 
 import argparse
+import base64
 import hashlib
+import hmac
 import json
+import os
 import re
 import shutil
 import sys
@@ -236,21 +239,30 @@ Import:
 Verify bundle integrity:
   py -3 .\\scripts\\capsule_cli.py verify .\\research-loop.scap
 
+Sign with an explicit local key file:
+  py -3 .\\scripts\\capsule_cli.py export --thread research-loop --out .\\research-loop.scap --signature-key-file .\\capsule-signing.key --signature-key-id local
+
 If snapshots are omitted, transcript replay remains the fallback.
 
 For gateway upload/download transport:
   capsule help transport""",
     "security": """Security status:
   implemented: per-entry sha256 file_digests in exported .scap bundles
+  implemented: optional HMAC-SHA256 bundle signatures
   implemented: capsule verify rejects duplicate or digest-mismatched bundle entries
   implemented: import verifies bundles that include file_digests
-  not implemented yet: cryptographic signing
   not implemented yet: encryption or sealed user-carried blobs
 
 Commands:
   py -3 .\\scripts\\capsule_cli.py verify .\\research-loop.scap
+  py -3 .\\scripts\\capsule_cli.py verify .\\research-loop.scap --signature-key-file .\\capsule-signing.key --require-signature
 
-The digest index is an integrity check, not an authenticity proof. Signing and encryption are future envelope layers.""",
+Key handling:
+  --signature-key-file reads a local key file for this command only
+  --signature-key-env reads a key from an environment variable
+  keys are not written into .capsules state
+
+HMAC signing proves possession of the shared key. Encryption and sealed blobs are future envelope layers.""",
     "model-plane": """Model Plane should supervise Session Capsules, not become the gateway.
 
 Model Plane owns:
@@ -1545,7 +1557,73 @@ def bundle_file_digests(bundle_path: Path) -> dict[str, str]:
         return zip_payload_digests(bundle)
 
 
-def verify_bundle_integrity(bundle_path: Path) -> JSONDict:
+def canonical_json_bytes(data: JSONDict) -> bytes:
+    return json.dumps(data, sort_keys=True, separators=(",", ":")).encode("utf-8")
+
+
+def read_signature_key(key_file: Path | None, key_env: str | None) -> bytes | None:
+    if key_file and key_env:
+        raise RuntimeError("Use only one signature key source: --signature-key-file or --signature-key-env")
+    key: bytes | None = None
+    if key_file:
+        key = key_file.read_bytes().strip()
+    elif key_env:
+        value = os.environ.get(key_env)
+        if value is None:
+            raise RuntimeError(f"Signature key environment variable is not set: {key_env}")
+        key = value.encode("utf-8")
+    if key is not None and not key:
+        raise RuntimeError("Signature key is empty")
+    return key
+
+
+def signature_payload(manifest: JSONDict) -> bytes:
+    payload = json.loads(json.dumps(manifest))
+    integrity = payload.setdefault("integrity", {})
+    if not isinstance(integrity, dict):
+        raise RuntimeError("Bundle manifest integrity must be an object")
+    integrity["signature"] = None
+    return canonical_json_bytes(payload)
+
+
+def hmac_signature(manifest: JSONDict, key: bytes) -> str:
+    raw = hmac.new(key, signature_payload(manifest), hashlib.sha256).digest()
+    return "base64url:" + base64.urlsafe_b64encode(raw).decode("ascii").rstrip("=")
+
+
+def build_bundle_signature(manifest: JSONDict, key: bytes, key_id: str | None) -> JSONDict:
+    return {
+        "algorithm": "hmac-sha256",
+        "key_id": key_id,
+        "digest": hmac_signature(manifest, key),
+    }
+
+
+def verify_bundle_signature(manifest: JSONDict, key: bytes) -> JSONDict:
+    integrity = manifest.get("integrity", {})
+    if not isinstance(integrity, dict):
+        raise RuntimeError("Bundle manifest integrity must be an object")
+    signature = integrity.get("signature")
+    if not isinstance(signature, dict):
+        raise RuntimeError("Bundle signature is not present")
+    if signature.get("algorithm") != "hmac-sha256":
+        raise RuntimeError(f"Unsupported bundle signature algorithm: {signature.get('algorithm')}")
+    expected = hmac_signature(manifest, key)
+    actual = str(signature.get("digest", ""))
+    if not hmac.compare_digest(actual, expected):
+        raise RuntimeError("Bundle signature verification failed")
+    return {
+        "algorithm": signature["algorithm"],
+        "key_id": signature.get("key_id"),
+        "verified": True,
+    }
+
+
+def verify_bundle_integrity(
+    bundle_path: Path,
+    signature_key: bytes | None = None,
+    require_signature: bool = False,
+) -> JSONDict:
     if not bundle_path.exists():
         raise FileNotFoundError(f"Bundle not found: {bundle_path}")
     with zipfile.ZipFile(bundle_path, "r") as bundle:
@@ -1558,6 +1636,7 @@ def verify_bundle_integrity(bundle_path: Path) -> JSONDict:
             "reason": "bundle has no file_digests index",
             "thread_id": manifest.get("thread_id"),
             "entries": len(actual),
+            "signature": "not_checked",
         }
     if not isinstance(expected, dict):
         raise RuntimeError("Bundle manifest file_digests must be an object")
@@ -1570,11 +1649,27 @@ def verify_bundle_integrity(bundle_path: Path) -> JSONDict:
             "Bundle digest verification failed: "
             f"missing={missing}, extra={extra}, mismatched={mismatched}"
         )
+    integrity = manifest.get("integrity", {})
+    signature = integrity.get("signature") if isinstance(integrity, dict) else None
+    signature_status: JSONDict = {
+        "status": "absent" if signature is None else "present_unchecked",
+        "algorithm": signature.get("algorithm") if isinstance(signature, dict) else None,
+        "key_id": signature.get("key_id") if isinstance(signature, dict) else None,
+    }
+    if require_signature and signature_key is None:
+        raise RuntimeError("A signature key is required when --require-signature is set")
+    if signature_key is not None:
+        signature_status = verify_bundle_signature(manifest, signature_key)
+        signature_status["status"] = "verified"
+    elif require_signature:
+        raise RuntimeError("Bundle signature is required")
+
     return {
         "verified": True,
         "thread_id": manifest.get("thread_id"),
         "entries": len(actual),
         "algorithm": "sha256",
+        "signature": signature_status,
     }
 
 
@@ -1665,16 +1760,25 @@ def export_bundle(args: argparse.Namespace) -> int:
 
     bundle_manifest["included_files"] = sorted(set(included_files))
     bundle_manifest["omitted_snapshots"] = sorted(set(omitted_snapshots))
+    signature_key = read_signature_key(getattr(args, "signature_key_file", None), getattr(args, "signature_key_env", None))
+
     bundle_manifest["integrity"] = {
         "file_digest_algorithm": "sha256",
         "signature": None,
         "encryption": None,
         "notes": [
             "file_digests cover every zip entry except manifest.json.",
-            "Signatures and encryption are not implemented in this local bundle format yet.",
+            "HMAC signatures are optional and use an external key supplied at export time.",
+            "Encryption is not implemented in this local bundle format yet.",
         ],
     }
     bundle_manifest["file_digests"] = bundle_file_digests(out_path)
+    if signature_key is not None:
+        bundle_manifest["integrity"]["signature"] = build_bundle_signature(
+            bundle_manifest,
+            signature_key,
+            getattr(args, "signature_key_id", None),
+        )
     with zipfile.ZipFile(out_path, "a", compression=zipfile.ZIP_DEFLATED) as bundle:
         add_text_to_zip(bundle, "manifest.json", json.dumps(bundle_manifest, indent=2) + "\n")
 
@@ -1692,7 +1796,8 @@ def import_bundle(args: argparse.Namespace) -> int:
     if not bundle_path.exists():
         raise FileNotFoundError(f"Bundle not found: {bundle_path}")
 
-    integrity = verify_bundle_integrity(bundle_path)
+    signature_key = read_signature_key(getattr(args, "signature_key_file", None), getattr(args, "signature_key_env", None))
+    integrity = verify_bundle_integrity(bundle_path, signature_key, bool(getattr(args, "require_signature", False)))
     if not integrity["verified"]:
         print(f"warning: {integrity['reason']}")
 
@@ -1730,13 +1835,21 @@ def import_bundle(args: argparse.Namespace) -> int:
 
 def verify_bundle(args: argparse.Namespace) -> int:
     bundle_path = args.bundle.resolve()
-    result = verify_bundle_integrity(bundle_path)
+    signature_key = read_signature_key(args.signature_key_file, args.signature_key_env)
+    result = verify_bundle_integrity(bundle_path, signature_key, args.require_signature)
     print(f"bundle: {bundle_path}")
     print(f"thread: {result.get('thread_id')}")
     print(f"verified: {'yes' if result['verified'] else 'no'}")
     print(f"entries: {result.get('entries')}")
     if result.get("algorithm"):
         print(f"algorithm: {result['algorithm']}")
+    signature = result.get("signature")
+    if isinstance(signature, dict):
+        print(f"signature: {signature.get('status')}")
+        if signature.get("algorithm"):
+            print(f"signature algorithm: {signature['algorithm']}")
+        if signature.get("key_id"):
+            print(f"signature key id: {signature['key_id']}")
     if result.get("reason"):
         print(f"reason: {result['reason']}")
     return 0 if result["verified"] else 1
@@ -2414,17 +2527,26 @@ def build_parser() -> argparse.ArgumentParser:
     export.add_argument("--out", type=Path, required=True)
     export.add_argument("--include-snapshots", action="store_true")
     export.add_argument("--redact-transcript", action="store_true")
+    export.add_argument("--signature-key-file", type=Path)
+    export.add_argument("--signature-key-env")
+    export.add_argument("--signature-key-id")
     export.add_argument("--force", action="store_true")
     export.set_defaults(func=export_bundle)
 
     import_cmd = subcommands.add_parser("import")
     import_cmd.add_argument("bundle", type=Path)
     import_cmd.add_argument("--thread-id")
+    import_cmd.add_argument("--signature-key-file", type=Path)
+    import_cmd.add_argument("--signature-key-env")
+    import_cmd.add_argument("--require-signature", action="store_true")
     import_cmd.add_argument("--force", action="store_true")
     import_cmd.set_defaults(func=import_bundle)
 
     verify_cmd = subcommands.add_parser("verify")
     verify_cmd.add_argument("bundle", type=Path)
+    verify_cmd.add_argument("--signature-key-file", type=Path)
+    verify_cmd.add_argument("--signature-key-env")
+    verify_cmd.add_argument("--require-signature", action="store_true")
     verify_cmd.set_defaults(func=verify_bundle)
 
     job = subcommands.add_parser("job")

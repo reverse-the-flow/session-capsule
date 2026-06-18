@@ -66,10 +66,10 @@ A `.scap` bundle has its own top-level `manifest.json`. New exports include:
 
 - `integrity.file_digest_algorithm = sha256`
 - `file_digests`, covering every zip entry except `manifest.json`
-- `integrity.signature = null`
+- `integrity.signature = null` or an HMAC-SHA256 signature object
 - `integrity.encryption = null`
 
-The digest index detects corrupted, swapped, extra, missing, or duplicate bundle entries. It is not a signature and does not prove who created the bundle.
+The digest index detects corrupted, swapped, extra, missing, or duplicate bundle entries. HMAC-SHA256 signing can prove that the verifier and exporter share the same key. It is not public-key identity, and it does not encrypt the bundle.
 
 ## Reload Order
 
