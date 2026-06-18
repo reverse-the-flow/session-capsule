@@ -373,6 +373,7 @@ Recommended order:
 10. Stage 9: capsule storage management
 11. Stage 10: gateway bundle transport
 12. Stage 11: bundle integrity, signing, and sealing
+13. Stage 12: gateway access control
 
 Do not start with gateway or Model Plane. They become simpler after the ledger, manifest, and CLI lifecycle are real.
 
@@ -472,6 +473,33 @@ Initial status:
 - `import BUNDLE.scap` verifies bundles that include `file_digests` before extracting state files.
 - `scripts/test_capsule_cli_export_import.py` validates successful verification, signature checks, and tamper rejection.
 - Encryption and sealed user-carried blobs are not implemented yet.
+
+## Stage 12: Gateway Access Control
+
+Goal: Keep upload/download and request-path gateway surfaces local by default, with an explicit token gate before wider exposure.
+
+Implementation steps:
+
+- Keep default gateway binding on `127.0.0.1`.
+- Add optional request-token authentication for all gateway routes.
+- Accept standard `Authorization: Bearer TOKEN` for OpenAI-compatible clients.
+- Accept `X-Capsule-Gateway-Key` for local control scripts.
+- Keep auth tokens out of persistent capsule config, endpoint records, and job packets.
+- Report whether auth is active from the status endpoint without exposing the token.
+- Smoke-test unauthenticated rejection and authenticated gateway transport.
+
+Exit criteria:
+
+- A gateway launched with an auth token rejects unauthenticated requests.
+- Existing OpenAI-compatible clients can use their API key field as the bearer token.
+- Local UI/control clients have a simple explicit header option.
+
+Initial status:
+
+- `capsule_gateway.py --auth-token-file TOKENFILE` and `--auth-token-env ENVNAME` enable request-token authentication.
+- Authenticated requests may use `Authorization: Bearer TOKEN` or `X-Capsule-Gateway-Key: TOKEN`.
+- `/api/capsules/status` reports `auth_required` without exposing the token.
+- `scripts/test_capsule_gateway_fake_backend.py` verifies unauthenticated rejection and authenticated signed transport.
 
 ## First Three Implementation Tickets
 

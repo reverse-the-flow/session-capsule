@@ -42,6 +42,8 @@ If the client runs inside Docker while the gateway runs on the Windows host, use
 http://host.docker.internal:8765/v1
 ```
 
+If the gateway is launched with `--auth-token-file` or `--auth-token-env`, use that token as the OpenAI-compatible API key. Control-plane tools may send the same value as `X-Capsule-Gateway-Key`.
+
 ## Headers
 
 Preferred explicit headers:
@@ -84,6 +86,8 @@ ENABLE_FORWARD_USER_INFO_HEADERS=True
 
 `ENABLE_FORWARD_USER_INFO_HEADERS=True` lets Open WebUI forward chat and user headers. The gateway maps `X-OpenWebUI-Chat-Id` to `X-Capsule-Thread` behavior and `X-OpenWebUI-User-Id` to workspace metadata.
 
+If gateway auth is enabled, set `OPENAI_API_KEY` to the gateway token.
+
 ## opencode
 
 opencode can use an OpenAI-compatible custom provider.
@@ -105,7 +109,7 @@ The core provider shape is:
       "name": "Session Capsules",
       "options": {
         "baseURL": "http://127.0.0.1:8765/v1",
-        "apiKey": "sk-capsule-local",
+        "apiKey": "{env:CAPSULE_GATEWAY_TOKEN}",
         "headers": {
           "X-Capsule-Workspace": "{env:CAPSULE_WORKSPACE}",
           "X-Capsule-Prefill": "{env:CAPSULE_PREFILL}",

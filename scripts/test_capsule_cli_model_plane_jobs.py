@@ -129,6 +129,7 @@ def main() -> None:
             signature_key_env=None,
             signature_key_id=None,
             require_bundle_signature=False,
+            auth_token=None,
             lock=threading.Lock(),
         )
         gateway = capsule_gateway.create_server(config)

@@ -99,6 +99,8 @@ Launch flags should describe the current process:
 - `--default-prefill`
 - `--timeout`
 - `--max-bundle-bytes`
+- `--auth-token-file`
+- `--auth-token-env`
 
 These are good Model Plane launch-profile fields.
 
@@ -178,6 +180,17 @@ Gateway bundle signing is also launch policy:
 py -3 .\scripts\capsule_gateway.py --state-dir .\.capsules --endpoint local-llamacpp --signature-key-file .\capsule-signing.key --signature-key-id local --require-bundle-signature
 ```
 
+Gateway request auth is optional but should be enabled before binding beyond local-only use:
+
+```powershell
+py -3 .\scripts\capsule_gateway.py --state-dir .\.capsules --endpoint local-llamacpp --auth-token-file .\capsule-gateway-token
+```
+
+Authenticated requests may use either:
+
+- `Authorization: Bearer TOKEN`
+- `X-Capsule-Gateway-Key: TOKEN`
+
 ## Security
 
 Exported `.scap` bundles include per-entry SHA-256 digests in `manifest.json`.
@@ -204,6 +217,7 @@ Current boundary:
 - key sources: `--signature-key-file` or `--signature-key-env`
 - keys are not stored in `.capsules`
 - gateway signing/required-signature import is controlled by launch flags
+- gateway request auth is controlled by `--auth-token-file` or `--auth-token-env`
 - not implemented yet: encryption or sealed user-carried blobs
 
 ## Model Plane

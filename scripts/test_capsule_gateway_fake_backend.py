@@ -11,7 +11,7 @@ import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
-from urllib import request
+from urllib import error, request
 from urllib.parse import parse_qs, urlparse
 
 import capsule_gateway
@@ -118,13 +118,15 @@ def post_json(url: str, payload: dict[str, Any], headers: dict[str, str]) -> tup
         return body, {key: value for key, value in response.headers.items()}
 
 
-def get_json(url: str) -> dict[str, Any]:
-    with request.urlopen(url, timeout=20) as response:
+def get_json(url: str, headers: dict[str, str] | None = None) -> dict[str, Any]:
+    req = request.Request(url, headers=headers or {}, method="GET")
+    with request.urlopen(req, timeout=20) as response:
         return json.loads(response.read().decode("utf-8"))
 
 
-def get_bytes(url: str) -> tuple[bytes, dict[str, str]]:
-    with request.urlopen(url, timeout=20) as response:
+def get_bytes(url: str, headers: dict[str, str] | None = None) -> tuple[bytes, dict[str, str]]:
+    req = request.Request(url, headers=headers or {}, method="GET")
+    with request.urlopen(req, timeout=20) as response:
         return response.read(), {key: value for key, value in response.headers.items()}
 
 
@@ -140,10 +142,20 @@ def post_bytes(url: str, payload: bytes, headers: dict[str, str]) -> tuple[dict[
         return body, {key: value for key, value in response.headers.items()}
 
 
-def delete_json(url: str) -> dict[str, Any]:
-    req = request.Request(url, method="DELETE")
+def delete_json(url: str, headers: dict[str, str] | None = None) -> dict[str, Any]:
+    req = request.Request(url, headers=headers or {}, method="DELETE")
     with request.urlopen(req, timeout=20) as response:
         return json.loads(response.read().decode("utf-8"))
+
+
+def expect_unauthorized(url: str) -> None:
+    try:
+        request.urlopen(url, timeout=20)
+    except error.HTTPError as exc:
+        if exc.code != 401:
+            raise AssertionError(f"expected 401, got {exc.code}") from exc
+        return
+    raise AssertionError("unauthenticated gateway request unexpectedly succeeded")
 
 
 def main() -> None:
@@ -160,6 +172,8 @@ def main() -> None:
             state = Path(temp) / ".capsules"
             prefill_path = Path(temp) / "prefill.md"
             signature_key = Path(temp) / "gateway-signing.key"
+            gateway_token = "gateway-auth-token"
+            auth_headers = {"X-Capsule-Gateway-Key": gateway_token}
             prefill_path.write_text("Stable gateway prefill.", encoding="utf-8")
             signature_key.write_text("gateway-signing-key", encoding="utf-8")
 
@@ -200,12 +214,17 @@ def main() -> None:
                 signature_key_env=None,
                 signature_key_id="gateway-test",
                 require_bundle_signature=False,
+                auth_token=gateway_token,
                 lock=threading.Lock(),
             )
             gateway = capsule_gateway.create_server(config)
             gateway_thread = threading.Thread(target=gateway.serve_forever, daemon=True)
             gateway_thread.start()
             gateway_url = f"http://127.0.0.1:{gateway.server_port}"
+            expect_unauthorized(f"{gateway_url}/api/capsules/status")
+            status = get_json(f"{gateway_url}/api/capsules/status", auth_headers)
+            if status.get("auth_required") is not True:
+                raise AssertionError("gateway status did not report enabled auth")
 
             first_payload = {
                 "model": "fake-model",
@@ -215,7 +234,7 @@ def main() -> None:
             response, headers = post_json(
                 f"{gateway_url}/v1/chat/completions",
                 first_payload,
-                {"X-Capsule-Thread": "gateway-thread", "X-Capsule-Prefill": "user_default"},
+                {**auth_headers, "X-Capsule-Thread": "gateway-thread", "X-Capsule-Prefill": "user_default"},
             )
             if response["choices"][0]["message"]["content"] != "gateway response 1":
                 raise AssertionError("unexpected first gateway response")
@@ -234,7 +253,7 @@ def main() -> None:
             response, headers = post_json(
                 f"{gateway_url}/v1/chat/completions",
                 second_payload,
-                {"X-Capsule-Thread": "gateway-thread"},
+                {**auth_headers, "X-Capsule-Thread": "gateway-thread"},
             )
             if response["choices"][0]["message"]["content"] != "gateway response 2":
                 raise AssertionError("unexpected second gateway response")
@@ -266,6 +285,7 @@ def main() -> None:
                 f"{gateway_url}/v1/chat/completions",
                 open_webui_payload,
                 {
+                    **auth_headers,
                     "X-OpenWebUI-Chat-Id": "open-webui-chat-42",
                     "X-OpenWebUI-User-Id": "user-alpha",
                 },
@@ -287,7 +307,7 @@ def main() -> None:
                     "bundle_id": "gateway-thread-test",
                     "include_snapshots": False,
                 },
-                {},
+                auth_headers,
             )
             if export_headers.get("X-Capsule-Export") != "ok":
                 raise AssertionError("gateway export endpoint did not mark response")
@@ -300,11 +320,11 @@ def main() -> None:
             if exported.get("signature_key_id") != "gateway-test":
                 raise AssertionError("gateway export did not include configured signature key id")
 
-            bundle_list = get_json(f"{gateway_url}/api/capsules/bundles")
+            bundle_list = get_json(f"{gateway_url}/api/capsules/bundles", auth_headers)
             if not any(item["bundle_id"] == "gateway-thread-test" for item in bundle_list["bundles"]):
                 raise AssertionError("exported bundle was not listed")
 
-            bundle_bytes, download_headers = get_bytes(f"{gateway_url}/api/capsules/bundles/gateway-thread-test")
+            bundle_bytes, download_headers = get_bytes(f"{gateway_url}/api/capsules/bundles/gateway-thread-test", auth_headers)
             if not bundle_bytes.startswith(b"PK"):
                 raise AssertionError("downloaded bundle was not a zip/scap payload")
             if download_headers.get("X-Capsule-Bundle-Id") != "gateway-thread-test":
@@ -346,6 +366,7 @@ def main() -> None:
                 signature_key_env=None,
                 signature_key_id="gateway-test",
                 require_bundle_signature=True,
+                auth_token=gateway_token,
                 lock=threading.Lock(),
             )
             import_gateway = capsule_gateway.create_server(import_config)
@@ -356,7 +377,7 @@ def main() -> None:
                 imported, import_headers = post_bytes(
                     f"{import_gateway_url}/api/capsules/import",
                     bundle_bytes,
-                    {"X-Capsule-Bundle-Id": "uploaded-gateway-thread"},
+                    {**auth_headers, "X-Capsule-Bundle-Id": "uploaded-gateway-thread"},
                 )
                 if import_headers.get("X-Capsule-Import") != "ok":
                     raise AssertionError("gateway import endpoint did not mark response")
@@ -365,13 +386,13 @@ def main() -> None:
                 imported_ledger = imported_state / "threads" / "gateway-thread" / "thread-ledger.json"
                 if not imported_ledger.exists():
                     raise AssertionError("raw upload import did not create thread ledger")
-                imported_bundle_list = get_json(f"{import_gateway_url}/api/capsules/bundles")
+                imported_bundle_list = get_json(f"{import_gateway_url}/api/capsules/bundles", auth_headers)
                 if not any(item["bundle_id"] == "uploaded-gateway-thread" for item in imported_bundle_list["bundles"]):
                     raise AssertionError("raw upload import did not retain uploaded bundle")
                 reimported, reimport_headers = post_json(
                     f"{import_gateway_url}/api/capsules/import",
                     {"bundle_id": "uploaded-gateway-thread", "force": True},
-                    {},
+                    auth_headers,
                 )
                 if reimport_headers.get("X-Capsule-Import") != "ok":
                     raise AssertionError("stored bundle import endpoint did not mark response")
@@ -381,7 +402,7 @@ def main() -> None:
                 import_gateway.shutdown()
                 import_gateway.server_close()
 
-            deleted = delete_json(f"{gateway_url}/api/capsules/bundles/gateway-thread-test")
+            deleted = delete_json(f"{gateway_url}/api/capsules/bundles/gateway-thread-test", auth_headers)
             if deleted.get("deleted") is not True:
                 raise AssertionError("gateway did not delete exported bundle")
     finally:

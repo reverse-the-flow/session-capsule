@@ -116,6 +116,8 @@ These should stay as launch-time values because they describe the current proces
 | `--signature-key-env` | `CAPSULE_SIGNING_KEY` | Optional gateway signing key environment variable. |
 | `--signature-key-id` | `local` | Non-secret label written into signed bundles. |
 | `--require-bundle-signature` | flag | Requires gateway imports to verify with the configured signing key. |
+| `--auth-token-file` | `.capsule-gateway-token` | Optional gateway request token file. |
+| `--auth-token-env` | `CAPSULE_GATEWAY_TOKEN` | Optional gateway request token environment variable. |
 
 ## Secret Inputs
 
@@ -126,8 +128,10 @@ Signature keys are secret inputs, not persistent settings:
 | `--signature-key-file` | `.capsule-signing.key` | Reads a local signing key for export/import/verify without storing it in `.capsules`. |
 | `--signature-key-env` | `CAPSULE_SIGNING_KEY` | Reads a signing key from the process environment. |
 | `--signature-key-id` | `local` | Non-secret label written into signed bundle metadata. |
+| `--auth-token-file` | `.capsule-gateway-token` | Reads a request token required by the gateway. |
+| `--auth-token-env` | `CAPSULE_GATEWAY_TOKEN` | Reads a request token from the process environment. |
 
-For the gateway, these are launch-profile values. Do not put signing keys in `settings.json`, endpoint records, or Model Plane job packets.
+For the gateway, these are launch-profile values. Do not put signing keys or gateway auth tokens in `settings.json`, endpoint records, or Model Plane job packets.
 
 ## Endpoint Records
 
@@ -159,6 +163,7 @@ There is enough configuration surface for a real help view now:
 - prefill selection
 - gateway bundle transport
 - bundle signature key handling
+- gateway auth token handling
 - Model Plane job packets
 - storage stats, pinning, and GC
 

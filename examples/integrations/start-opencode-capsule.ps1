@@ -2,6 +2,7 @@ param(
   [string]$Thread = "",
   [string]$Workspace = "",
   [string]$Prefill = "user_default",
+  [string]$GatewayToken = "",
   [string]$Model = "session-capsules/fake-model"
 )
 
@@ -21,9 +22,15 @@ if (-not $Thread) {
 $env:CAPSULE_WORKSPACE = $Workspace
 $env:CAPSULE_THREAD = $Thread
 $env:CAPSULE_PREFILL = $Prefill
+if ($GatewayToken) {
+  $env:CAPSULE_GATEWAY_TOKEN = $GatewayToken
+} elseif (-not $env:CAPSULE_GATEWAY_TOKEN) {
+  $env:CAPSULE_GATEWAY_TOKEN = "sk-capsule-local"
+}
 
 Write-Host "CAPSULE_WORKSPACE=$env:CAPSULE_WORKSPACE"
 Write-Host "CAPSULE_THREAD=$env:CAPSULE_THREAD"
 Write-Host "CAPSULE_PREFILL=$env:CAPSULE_PREFILL"
+Write-Host "CAPSULE_GATEWAY_TOKEN=set"
 
 opencode --model $Model

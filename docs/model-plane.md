@@ -80,6 +80,8 @@ The gateway owns local export/import mechanics. Model Plane owns auth, UX, reten
 
 If signed transport is required, Model Plane should launch the gateway with `--signature-key-file` or `--signature-key-env` and `--require-bundle-signature`. Signing keys should not be placed inside job packets.
 
+If gateway auth is required, Model Plane should launch the gateway with `--auth-token-file` or `--auth-token-env` and provide the token to clients as a bearer API key or `X-Capsule-Gateway-Key`. Auth tokens should not be placed inside job packets.
+
 The standalone harness can execute those transport intents as job packets:
 
 ```powershell

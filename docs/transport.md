@@ -10,6 +10,13 @@ The gateway owns local bundle creation, local bundle storage, download, upload, 
 
 Gateway bundle signing is launch policy. If the gateway is started with `--signature-key-file` or `--signature-key-env`, exported bundles are signed. If it is also started with `--require-bundle-signature`, imports must verify with that key before extraction.
 
+Gateway request auth is also launch policy. If the gateway is started with `--auth-token-file` or `--auth-token-env`, every request must include either:
+
+```text
+Authorization: Bearer TOKEN
+X-Capsule-Gateway-Key: TOKEN
+```
+
 ## Gateway Endpoints
 
 The local gateway exposes:
@@ -162,6 +169,7 @@ Gateway owns:
 - import into local capsule state
 - max upload size enforcement
 - optional signing and required-signature verification as launch policy
+- optional request-token authentication as launch policy
 
 Model Plane owns:
 
@@ -184,6 +192,7 @@ Implemented now:
 - duplicate zip-entry rejection
 - required signature verification with `--require-signature`
 - gateway signing and required import verification through launch flags
+- gateway request-token authentication through launch flags
 
 Not implemented yet:
 

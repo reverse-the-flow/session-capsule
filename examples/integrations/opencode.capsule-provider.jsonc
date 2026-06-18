@@ -6,7 +6,7 @@
       "name": "Session Capsules",
       "options": {
         "baseURL": "http://127.0.0.1:8765/v1",
-        "apiKey": "sk-capsule-local",
+        "apiKey": "{env:CAPSULE_GATEWAY_TOKEN}",
         "headers": {
           "X-Capsule-Workspace": "{env:CAPSULE_WORKSPACE}",
           "X-Capsule-Prefill": "{env:CAPSULE_PREFILL}",

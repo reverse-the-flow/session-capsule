@@ -180,6 +180,12 @@ The gateway can apply the same policy to upload/download transport:
 py -3 .\scripts\capsule_gateway.py --state-dir .\.capsules --endpoint local-llamacpp --signature-key-file .\capsule-signing.key --signature-key-id local --require-bundle-signature
 ```
 
+If the gateway is bound beyond local-only use, require a request token:
+
+```powershell
+py -3 .\scripts\capsule_gateway.py --state-dir .\.capsules --endpoint local-llamacpp --auth-token-file .\capsule-gateway-token
+```
+
 Inspect and clean local hard capsule storage:
 
 ```powershell

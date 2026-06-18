@@ -19,7 +19,7 @@ It performs:
 - storage config, pinning, stats, and GC smoke test
 - Model Plane job-packet smoke test, including gateway transport job packets
 - local gateway fake-backend smoke test
-- gateway signed bundle export/list/download/upload/delete smoke path
+- gateway auth plus signed bundle export/list/download/upload/delete smoke path
 
 ## Current Evidence
 
@@ -47,6 +47,7 @@ The gateway integration contract is verified by fake-backend tests that exercise
 - hard restore plus diff forwarding
 - checkpoint after response
 - `.scap` export, list, download, raw upload import, and bundle delete
+- authenticated gateway requests when a token is configured
 
 Live client verification remains an operator step:
 

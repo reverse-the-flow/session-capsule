@@ -14,7 +14,9 @@ from __future__ import annotations
 
 import argparse
 import contextlib
+import hmac
 import json
+import os
 import re
 import threading
 import uuid
@@ -66,6 +68,7 @@ class GatewayConfig:
     signature_key_env: str | None
     signature_key_id: str | None
     require_bundle_signature: bool
+    auth_token: str | None
     lock: threading.Lock
 
 
@@ -161,6 +164,47 @@ def send_bytes(
             handler.send_header(key, value)
     handler.end_headers()
     handler.wfile.write(body)
+
+
+def read_gateway_auth_token(token_file: Path | None, token_env: str | None) -> str | None:
+    if token_file and token_env:
+        raise RuntimeError("Use only one gateway auth token source: --auth-token-file or --auth-token-env")
+    token: str | None = None
+    if token_file:
+        token = token_file.read_text(encoding="utf-8").strip()
+    elif token_env:
+        token = os.environ.get(token_env)
+        if token is None:
+            raise RuntimeError(f"Gateway auth token environment variable is not set: {token_env}")
+        token = token.strip()
+    if token is not None and not token:
+        raise RuntimeError("Gateway auth token is empty")
+    return token
+
+
+def request_auth_token(handler: BaseHTTPRequestHandler) -> str | None:
+    header = handler.headers.get("Authorization", "")
+    if header.startswith("Bearer "):
+        return header[len("Bearer ") :].strip()
+    capsule_key = handler.headers.get("X-Capsule-Gateway-Key")
+    if capsule_key:
+        return capsule_key.strip()
+    return None
+
+
+def authorize_gateway_request(handler: BaseHTTPRequestHandler, config: GatewayConfig) -> bool:
+    if config.auth_token is None:
+        return True
+    supplied = request_auth_token(handler)
+    if supplied is not None and hmac.compare_digest(supplied, config.auth_token):
+        return True
+    send_json(
+        handler,
+        {"error": {"message": "unauthorized", "type": "gateway_auth"}},
+        status=401,
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+    return False
 
 
 def ensure_endpoint(config: GatewayConfig) -> JSONDict:
@@ -599,6 +643,8 @@ def make_handler(config: GatewayConfig) -> type[BaseHTTPRequestHandler]:
             return
 
         def do_GET(self) -> None:  # noqa: N802
+            if not authorize_gateway_request(self, config):
+                return
             parsed = urlparse(self.path)
             if parsed.path == "/api/capsules/status":
                 endpoint = ensure_endpoint(config)
@@ -614,6 +660,7 @@ def make_handler(config: GatewayConfig) -> type[BaseHTTPRequestHandler]:
                         "bundles": len(list_bundles(config)),
                         "bundle_signing": bool(config.signature_key_file or config.signature_key_env),
                         "require_bundle_signature": config.require_bundle_signature,
+                        "auth_required": config.auth_token is not None,
                     },
                 )
                 return
@@ -658,6 +705,8 @@ def make_handler(config: GatewayConfig) -> type[BaseHTTPRequestHandler]:
 
         def do_POST(self) -> None:  # noqa: N802
             try:
+                if not authorize_gateway_request(self, config):
+                    return
                 parsed = urlparse(self.path)
                 if parsed.path == "/api/capsules/import":
                     send_json(self, import_bundle_api(config, self), headers={"X-Capsule-Import": "ok"})
@@ -678,6 +727,8 @@ def make_handler(config: GatewayConfig) -> type[BaseHTTPRequestHandler]:
 
         def do_DELETE(self) -> None:  # noqa: N802
             try:
+                if not authorize_gateway_request(self, config):
+                    return
                 parsed = urlparse(self.path)
                 if parsed.path.startswith("/api/capsules/bundles/"):
                     bundle_id = unquote(parsed.path.rsplit("/", 1)[-1])
@@ -711,6 +762,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--signature-key-env", help="Optional environment variable containing the gateway bundle signing key.")
     parser.add_argument("--signature-key-id", help="Non-secret key label written into gateway-signed bundles.")
     parser.add_argument("--require-bundle-signature", action="store_true", help="Require uploaded or stored bundles to verify with the configured signature key before import.")
+    parser.add_argument("--auth-token-file", type=Path, help="Optional local token file required for every gateway request.")
+    parser.add_argument("--auth-token-env", help="Optional environment variable containing the gateway auth token.")
     return parser
 
 
@@ -736,6 +789,10 @@ def main() -> int:
         signature_key_env=args.signature_key_env,
         signature_key_id=args.signature_key_id,
         require_bundle_signature=args.require_bundle_signature,
+        auth_token=read_gateway_auth_token(
+            args.auth_token_file.resolve() if args.auth_token_file else None,
+            args.auth_token_env,
+        ),
         lock=threading.Lock(),
     )
     # Fail fast if endpoint is not configured.
