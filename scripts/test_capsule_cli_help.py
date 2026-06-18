@@ -52,6 +52,8 @@ def main() -> None:
     model_plane = run_cli("help", "model-plane")
     if "gateway_export_bundle" not in model_plane:
         raise AssertionError("model-plane help did not include gateway transport job types")
+    if "--gateway-auth-token-file" not in model_plane:
+        raise AssertionError("model-plane help did not include protected gateway job auth flags")
 
     security = run_cli("help", "security")
     if "optional HMAC-SHA256 bundle signatures" not in security or "keys are not written into .capsules state" not in security:

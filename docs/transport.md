@@ -220,3 +220,9 @@ examples/model-plane/gateway-*.example.json
 ```
 
 These job packets carry intent and policy inputs. They do not replace the gateway API; they call it.
+
+If the gateway requires auth, keep the token outside the packet and pass it to the standalone runner:
+
+```powershell
+py -3 .\scripts\capsule_cli.py --state-dir .\.capsules job run .\examples\model-plane\gateway-download-bundle.example.json --gateway-auth-token-file .\capsule-gateway-token
+```

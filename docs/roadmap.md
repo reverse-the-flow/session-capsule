@@ -438,6 +438,7 @@ Initial status:
 - Gateway launch flags can sign exported bundles and require verified signatures before import.
 - `scripts/test_capsule_gateway_fake_backend.py` validates export, list, download, raw upload import, and delete through the gateway.
 - Model Plane job packets can now invoke the gateway transport endpoints through `capsule_cli.py job run`.
+- Protected gateway transport jobs authenticate through runner-side `--gateway-auth-token-file` or `--gateway-auth-token-env` flags.
 
 ## Stage 11: Bundle Integrity, Signing, And Sealing
 
@@ -498,6 +499,7 @@ Initial status:
 
 - `capsule_gateway.py --auth-token-file TOKENFILE` and `--auth-token-env ENVNAME` enable request-token authentication.
 - Authenticated requests may use `Authorization: Bearer TOKEN` or `X-Capsule-Gateway-Key: TOKEN`.
+- `capsule_cli.py job run` can call protected gateway transport jobs with `--gateway-auth-token-file TOKENFILE` or `--gateway-auth-token-env ENVNAME`.
 - `/api/capsules/status` reports `auth_required` without exposing the token.
 - `scripts/test_capsule_gateway_fake_backend.py` verifies unauthenticated rejection and authenticated signed transport.
 

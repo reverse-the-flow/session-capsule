@@ -33,6 +33,22 @@ def run_cli(state_dir: Path, *args: str) -> subprocess.CompletedProcess[str]:
     return result
 
 
+def run_cli_failure(state_dir: Path, *args: str) -> subprocess.CompletedProcess[str]:
+    command = [sys.executable, str(CLI), "--state-dir", str(state_dir), *args]
+    result = subprocess.run(
+        command,
+        cwd=ROOT,
+        check=False,
+        text=True,
+        capture_output=True,
+    )
+    if result.returncode == 0:
+        raise AssertionError(
+            f"CLI unexpectedly succeeded: {' '.join(command)}\nSTDOUT:\n{result.stdout}\nSTDERR:\n{result.stderr}"
+        )
+    return result
+
+
 def write_job(path: Path, job_type: str, params: dict[str, object], dry_run: bool = False) -> None:
     payload: dict[str, object] = {
         "schema_version": "0.1",
@@ -55,6 +71,9 @@ def main() -> None:
         jobs.mkdir()
         bundle = temp_path / "job-thread.scap"
         downloaded_bundle = temp_path / "job-thread-gateway.scap"
+        gateway_token = temp_path / "gateway-token.txt"
+        gateway_token.write_text("job-gateway-token\n", encoding="utf-8")
+        gateway_auth_args = ("--gateway-auth-token-file", str(gateway_token))
 
         run_cli(
             state,
@@ -129,7 +148,7 @@ def main() -> None:
             signature_key_env=None,
             signature_key_id=None,
             require_bundle_signature=False,
-            auth_token=None,
+            auth_token="job-gateway-token",
             lock=threading.Lock(),
         )
         gateway = capsule_gateway.create_server(config)
@@ -150,13 +169,17 @@ def main() -> None:
                     "force": False,
                 },
             )
-            gateway_export = run_cli(state, "job", "run", str(gateway_export_job))
+            gateway_export = run_cli(state, "job", "run", str(gateway_export_job), *gateway_auth_args)
             if '"bundle_id": "job-thread-gateway"' not in gateway_export.stdout:
                 raise AssertionError("gateway export job did not return expected bundle id")
 
             gateway_list_job = jobs / "gateway-list.json"
             write_job(gateway_list_job, "gateway_list_bundles", {"gateway_url": gateway_url})
-            gateway_list = run_cli(state, "job", "run", str(gateway_list_job))
+            unauthorized_list = run_cli_failure(state, "job", "run", str(gateway_list_job))
+            if "unauthorized" not in unauthorized_list.stderr:
+                raise AssertionError("gateway list job without runner auth did not fail with unauthorized")
+
+            gateway_list = run_cli(state, "job", "run", str(gateway_list_job), *gateway_auth_args)
             if "job-thread-gateway" not in gateway_list.stdout:
                 raise AssertionError("gateway list job did not include exported bundle")
 
@@ -166,7 +189,7 @@ def main() -> None:
                 "gateway_download_bundle",
                 {"gateway_url": gateway_url, "bundle_id": "job-thread-gateway", "out": str(downloaded_bundle)},
             )
-            run_cli(state, "job", "run", str(gateway_download_job))
+            run_cli(state, "job", "run", str(gateway_download_job), *gateway_auth_args)
             if not downloaded_bundle.exists() or not downloaded_bundle.read_bytes().startswith(b"PK"):
                 raise AssertionError("gateway download job did not write a .scap bundle")
 
@@ -181,7 +204,7 @@ def main() -> None:
                     "force": True,
                 },
             )
-            gateway_import_upload = run_cli(state, "job", "run", str(gateway_import_upload_job))
+            gateway_import_upload = run_cli(state, "job", "run", str(gateway_import_upload_job), *gateway_auth_args)
             if '"thread_id": "job-thread"' not in gateway_import_upload.stdout:
                 raise AssertionError("gateway raw upload import job did not restore expected thread")
 
@@ -191,7 +214,7 @@ def main() -> None:
                 "gateway_import_bundle",
                 {"gateway_url": gateway_url, "bundle_id": "uploaded-job-thread", "force": True},
             )
-            gateway_import_stored = run_cli(state, "job", "run", str(gateway_import_stored_job))
+            gateway_import_stored = run_cli(state, "job", "run", str(gateway_import_stored_job), *gateway_auth_args)
             if '"bundle_id": "uploaded-job-thread"' not in gateway_import_stored.stdout:
                 raise AssertionError("gateway stored import job did not use expected bundle")
 
@@ -201,7 +224,7 @@ def main() -> None:
                 "gateway_delete_bundle",
                 {"gateway_url": gateway_url, "bundle_id": "job-thread-gateway"},
             )
-            gateway_delete = run_cli(state, "job", "run", str(gateway_delete_job))
+            gateway_delete = run_cli(state, "job", "run", str(gateway_delete_job), *gateway_auth_args)
             if '"deleted": true' not in gateway_delete.stdout:
                 raise AssertionError("gateway delete job did not delete exported bundle")
         finally:

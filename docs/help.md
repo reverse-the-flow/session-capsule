@@ -218,6 +218,7 @@ Current boundary:
 - keys are not stored in `.capsules`
 - gateway signing/required-signature import is controlled by launch flags
 - gateway request auth is controlled by `--auth-token-file` or `--auth-token-env`
+- gateway transport jobs authenticate with `job run --gateway-auth-token-file` or `job run --gateway-auth-token-env`
 - not implemented yet: encryption or sealed user-carried blobs
 
 ## Model Plane
@@ -233,3 +234,9 @@ Gateway transport job packet types:
 - `gateway_download_bundle`
 - `gateway_import_bundle`
 - `gateway_delete_bundle`
+
+Protected gateway job packets keep auth outside the packet:
+
+```powershell
+py -3 .\scripts\capsule_cli.py --state-dir .\.capsules job run .\examples\model-plane\gateway-download-bundle.example.json --gateway-auth-token-file .\capsule-gateway-token
+```

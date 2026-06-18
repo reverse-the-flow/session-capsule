@@ -17,7 +17,7 @@ It performs:
 - fake `llama.cpp` hard capsule save/restore smoke test
 - `.scap` export/import/verify, signature, and tamper-rejection smoke test
 - storage config, pinning, stats, and GC smoke test
-- Model Plane job-packet smoke test, including gateway transport job packets
+- Model Plane job-packet smoke test, including authenticated gateway transport job packets
 - local gateway fake-backend smoke test
 - gateway auth plus signed bundle export/list/download/upload/delete smoke path
 
@@ -47,7 +47,7 @@ The gateway integration contract is verified by fake-backend tests that exercise
 - hard restore plus diff forwarding
 - checkpoint after response
 - `.scap` export, list, download, raw upload import, and bundle delete
-- authenticated gateway requests when a token is configured
+- authenticated gateway requests and transport job packets when a token is configured
 
 Live client verification remains an operator step:
 

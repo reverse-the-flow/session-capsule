@@ -282,6 +282,9 @@ Capsule gateway owns:
 Run a job packet:
   py -3 .\\scripts\\capsule_cli.py job run .\\examples\\model-plane\\checkpoint-thread.example.json --dry-run
 
+Protected gateway transport jobs:
+  py -3 .\\scripts\\capsule_cli.py job run .\\examples\\model-plane\\gateway-download-bundle.example.json --gateway-auth-token-file .\\capsule-gateway-token
+
 Gateway health endpoint for launch profiles:
   /api/capsules/status
 
@@ -2250,9 +2253,43 @@ def gateway_timeout(params: JSONDict) -> float:
     return float(params.get("timeout", 120.0))
 
 
-def gateway_request_json(method: str, url: str, payload: JSONDict | None, timeout: float) -> JSONDict:
+def read_gateway_job_auth_token(token_file: Path | None, token_env: str | None) -> str | None:
+    if token_file and token_env:
+        raise RuntimeError("Use only one gateway job auth token source: --gateway-auth-token-file or --gateway-auth-token-env")
+    token: str | None = None
+    if token_file:
+        token = token_file.read_text(encoding="utf-8").strip()
+    elif token_env:
+        token = os.environ.get(token_env)
+        if token is None:
+            raise RuntimeError(f"Gateway job auth token environment variable is not set: {token_env}")
+        token = token.strip()
+    if token is not None and not token:
+        raise RuntimeError("Gateway job auth token is empty")
+    return token
+
+
+def gateway_job_auth_headers(args: argparse.Namespace) -> dict[str, str]:
+    token = read_gateway_job_auth_token(
+        getattr(args, "gateway_auth_token_file", None),
+        getattr(args, "gateway_auth_token_env", None),
+    )
+    if token is None:
+        return {}
+    return {"Authorization": f"Bearer {token}"}
+
+
+def gateway_request_json(
+    method: str,
+    url: str,
+    payload: JSONDict | None,
+    timeout: float,
+    auth_headers: dict[str, str] | None = None,
+) -> JSONDict:
     data = json.dumps(payload or {}).encode("utf-8") if payload is not None else None
-    headers = {"Content-Type": "application/json"} if payload is not None else {}
+    headers = dict(auth_headers or {})
+    if payload is not None:
+        headers["Content-Type"] = "application/json"
     req = request.Request(url, data=data, headers=headers, method=method)
     try:
         with request.urlopen(req, timeout=timeout) as response:
@@ -2268,13 +2305,14 @@ def gateway_request_json(method: str, url: str, payload: JSONDict | None, timeou
     return data
 
 
-def gateway_download_bundle(params: JSONDict, job_file: Path) -> int:
+def gateway_download_bundle(params: JSONDict, job_file: Path, auth_headers: dict[str, str]) -> int:
     bundle_id = str(require_job_param(params, "bundle_id"))
     out = job_path(job_file.parent, str(require_job_param(params, "out")))
     out.parent.mkdir(parents=True, exist_ok=True)
     url = f"{gateway_base_url(params)}/api/capsules/bundles/{quote(bundle_id)}"
+    req = request.Request(url, headers=auth_headers, method="GET")
     try:
-        with request.urlopen(url, timeout=gateway_timeout(params)) as response:
+        with request.urlopen(req, timeout=gateway_timeout(params)) as response:
             body = response.read()
     except error.HTTPError as exc:
         raise RuntimeError(exc.read().decode("utf-8", errors="replace")) from exc
@@ -2286,14 +2324,15 @@ def gateway_download_bundle(params: JSONDict, job_file: Path) -> int:
     return 0
 
 
-def gateway_import_bundle_job(params: JSONDict, job_file: Path) -> int:
+def gateway_import_bundle_job(params: JSONDict, job_file: Path, auth_headers: dict[str, str]) -> int:
     base = gateway_base_url(params)
     timeout = gateway_timeout(params)
     if "bundle" in params:
         source = job_path(job_file.parent, str(params["bundle"]))
         if not source.exists():
             raise FileNotFoundError(f"Bundle not found: {source}")
-        headers = {"Content-Type": str(params.get("content_type") or "application/vnd.session-capsule.scap")}
+        headers = dict(auth_headers)
+        headers["Content-Type"] = str(params.get("content_type") or "application/vnd.session-capsule.scap")
         if params.get("bundle_id"):
             headers["X-Capsule-Bundle-Id"] = str(params["bundle_id"])
         if params.get("force"):
@@ -2316,12 +2355,12 @@ def gateway_import_bundle_job(params: JSONDict, job_file: Path) -> int:
             "bundle_id": str(require_job_param(params, "bundle_id")),
             "force": bool(params.get("force", False)),
         }
-        data = gateway_request_json("POST", f"{base}/api/capsules/import", payload, timeout)
+        data = gateway_request_json("POST", f"{base}/api/capsules/import", payload, timeout, auth_headers)
     print(json.dumps(data, indent=2))
     return 0
 
 
-def gateway_transport_job(job_type: str, params: JSONDict, job_file: Path) -> int:
+def gateway_transport_job(job_type: str, params: JSONDict, job_file: Path, auth_headers: dict[str, str]) -> int:
     base = gateway_base_url(params)
     timeout = gateway_timeout(params)
     if job_type == "gateway_export_bundle":
@@ -2333,20 +2372,20 @@ def gateway_transport_job(job_type: str, params: JSONDict, job_file: Path) -> in
         }
         if params.get("bundle_id"):
             payload["bundle_id"] = str(params["bundle_id"])
-        data = gateway_request_json("POST", f"{base}/api/capsules/export", payload, timeout)
+        data = gateway_request_json("POST", f"{base}/api/capsules/export", payload, timeout, auth_headers)
         print(json.dumps(data, indent=2))
         return 0
     if job_type == "gateway_list_bundles":
-        data = gateway_request_json("GET", f"{base}/api/capsules/bundles", None, timeout)
+        data = gateway_request_json("GET", f"{base}/api/capsules/bundles", None, timeout, auth_headers)
         print(json.dumps(data, indent=2))
         return 0
     if job_type == "gateway_download_bundle":
-        return gateway_download_bundle(params, job_file)
+        return gateway_download_bundle(params, job_file, auth_headers)
     if job_type == "gateway_import_bundle":
-        return gateway_import_bundle_job(params, job_file)
+        return gateway_import_bundle_job(params, job_file, auth_headers)
     if job_type == "gateway_delete_bundle":
         bundle_id = str(require_job_param(params, "bundle_id"))
-        data = gateway_request_json("DELETE", f"{base}/api/capsules/bundles/{quote(bundle_id)}", None, timeout)
+        data = gateway_request_json("DELETE", f"{base}/api/capsules/bundles/{quote(bundle_id)}", None, timeout, auth_headers)
         print(json.dumps(data, indent=2))
         return 0
     raise RuntimeError(f"Unsupported gateway transport job_type: {job_type}")
@@ -2409,7 +2448,7 @@ def run_job_packet(args: argparse.Namespace) -> int:
         return validate_capsule_job(store, params)
 
     if job_type.startswith("gateway_"):
-        return gateway_transport_job(job_type, params, job_file)
+        return gateway_transport_job(job_type, params, job_file, gateway_job_auth_headers(args))
 
     raise RuntimeError(f"Unsupported job_type: {job_type}")
 
@@ -2555,6 +2594,8 @@ def build_parser() -> argparse.ArgumentParser:
     job_run = job_sub.add_parser("run")
     job_run.add_argument("job", type=Path)
     job_run.add_argument("--dry-run", action="store_true")
+    job_run.add_argument("--gateway-auth-token-file", type=Path)
+    job_run.add_argument("--gateway-auth-token-env")
     job_run.set_defaults(func=run_job_packet)
 
     config_cmd = subcommands.add_parser("config")
