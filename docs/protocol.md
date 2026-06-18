@@ -236,10 +236,13 @@ The same gateway exposes `.scap` bundle transport for local UI and Model Plane i
 GET    /api/capsules/status
 POST   /api/capsules/export
 GET    /api/capsules/bundles
+POST   /api/capsules/bundles
 GET    /api/capsules/bundles/{bundle_id}
 POST   /api/capsules/import
 DELETE /api/capsules/bundles/{bundle_id}
 ```
+
+`POST /api/capsules/bundles` stores verified raw `.scap` bytes without importing them. `POST /api/capsules/import` is the explicit import operation, either from a stored bundle id or from a one-step raw upload-import.
 
 The status response includes a versioned `transport` object so Model Plane can discover the running gateway's upload/download contract before issuing bundle operations.
 
@@ -271,6 +274,7 @@ Supported job types:
 - `validate_capsule`
 - `gateway_export_bundle`
 - `gateway_list_bundles`
+- `gateway_store_bundle`
 - `gateway_download_bundle`
 - `gateway_import_bundle`
 - `gateway_delete_bundle`

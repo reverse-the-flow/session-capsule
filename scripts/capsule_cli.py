@@ -284,6 +284,7 @@ Endpoints:
   GET    /api/capsules/status
   POST   /api/capsules/export
   GET    /api/capsules/bundles
+  POST   /api/capsules/bundles
   GET    /api/capsules/bundles/{bundle_id}
   POST   /api/capsules/import
   DELETE /api/capsules/bundles/{bundle_id}
@@ -308,6 +309,9 @@ Browser preflight:
 Raw upload import target thread header:
   X-Capsule-Import-Thread
 
+Store-only upload:
+  POST /api/capsules/bundles stores a verified .scap without creating thread state
+
 Gateway-side import policy:
   py -3 .\\scripts\\capsule_gateway.py --state-dir .\\.capsules --endpoint local-llamacpp --bundle-policy-preset metadata-only
 
@@ -316,6 +320,7 @@ Direct gateway client commands:
   py -3 .\\scripts\\capsule_cli.py gateway export --url http://127.0.0.1:8765 --thread research-loop --bundle-id research-loop
   py -3 .\\scripts\\capsule_cli.py gateway list --url http://127.0.0.1:8765
   py -3 .\\scripts\\capsule_cli.py gateway download --url http://127.0.0.1:8765 --bundle-id research-loop --out .\\research-loop.scap
+  py -3 .\\scripts\\capsule_cli.py gateway store --url http://127.0.0.1:8765 --bundle .\\research-loop.scap --bundle-id stored-research-loop
   py -3 .\\scripts\\capsule_cli.py gateway upload --url http://127.0.0.1:8765 --bundle .\\research-loop.scap --bundle-id uploaded-research-loop --thread-id research-loop-copy
   py -3 .\\scripts\\capsule_cli.py gateway delete --url http://127.0.0.1:8765 --bundle-id uploaded-research-loop""",
     "storage": """Hard snapshots can be large. They are managed cache artifacts unless pinned.
@@ -435,9 +440,11 @@ Protected gateway transport jobs:
 Direct gateway transport commands:
   py -3 .\\scripts\\capsule_cli.py gateway status --url http://127.0.0.1:8765 --auth-token-file .\\capsule-gateway-token --json
   py -3 .\\scripts\\capsule_cli.py gateway download --url http://127.0.0.1:8765 --bundle-id research-loop --out .\\research-loop.scap --auth-token-file .\\capsule-gateway-token
+  py -3 .\\scripts\\capsule_cli.py gateway store --url http://127.0.0.1:8765 --bundle .\\research-loop.scap --bundle-id stored-research-loop --auth-token-file .\\capsule-gateway-token
   py -3 .\\scripts\\capsule_cli.py gateway upload --url http://127.0.0.1:8765 --bundle .\\research-loop.scap --bundle-id uploaded-research-loop --thread-id research-loop-copy --auth-token-file .\\capsule-gateway-token
 
 Gate local uploads before sending bytes:
+  py -3 .\\scripts\\capsule_cli.py gateway store --url http://127.0.0.1:8765 --bundle .\\research-loop.sealed.scap --policy-preset sealed --auth-token-file .\\capsule-gateway-token
   py -3 .\\scripts\\capsule_cli.py gateway upload --url http://127.0.0.1:8765 --bundle .\\research-loop-redacted.scap --policy-preset metadata-only --auth-token-file .\\capsule-gateway-token
 
 Gateway-side import policy can also be set in the launch profile:
@@ -468,6 +475,7 @@ Supported job packet types:
   validate_capsule
   gateway_export_bundle
   gateway_list_bundles
+  gateway_store_bundle
   gateway_download_bundle
   gateway_import_bundle
   gateway_delete_bundle""",
@@ -3426,6 +3434,7 @@ def supported_job_types() -> set[str]:
         "validate_capsule",
         "gateway_export_bundle",
         "gateway_list_bundles",
+        "gateway_store_bundle",
         "gateway_download_bundle",
         "gateway_import_bundle",
         "gateway_delete_bundle",
@@ -3472,6 +3481,7 @@ TRANSPORT_CAPABILITY_NAMES = {
     "export",
     "list",
     "download",
+    "store_upload",
     "raw_upload_import",
     "stored_bundle_import",
     "delete",
@@ -3486,6 +3496,7 @@ DEFAULT_MODEL_PLANE_REQUIRED_CAPABILITIES = [
     "export",
     "list",
     "download",
+    "store_upload",
     "raw_upload_import",
     "stored_bundle_import",
     "delete",
@@ -4003,6 +4014,63 @@ def gateway_download_bundle(params: JSONDict, job_file: Path, auth_headers: dict
     return 0
 
 
+def gateway_store_bundle_file(
+    gateway_url: str,
+    source: Path,
+    timeout: float,
+    auth_headers: dict[str, str],
+    bundle_id: str | None = None,
+    force: bool = False,
+    content_type: str = "application/vnd.session-capsule.scap",
+) -> JSONDict:
+    if not source.exists():
+        raise FileNotFoundError(f"Bundle not found: {source}")
+    headers = dict(auth_headers)
+    headers["Content-Type"] = content_type
+    if bundle_id:
+        headers["X-Capsule-Bundle-Id"] = bundle_id
+    if force:
+        headers["X-Capsule-Bundle-Force"] = "true"
+    req = request.Request(
+        f"{gateway_base_url({'gateway_url': gateway_url})}/api/capsules/bundles",
+        data=source.read_bytes(),
+        headers=headers,
+        method="POST",
+    )
+    try:
+        with request.urlopen(req, timeout=timeout) as response:
+            data = json.loads(response.read().decode("utf-8"))
+    except error.HTTPError as exc:
+        raise RuntimeError(exc.read().decode("utf-8", errors="replace")) from exc
+    if not isinstance(data, dict):
+        raise RuntimeError("Gateway response was not a JSON object")
+    return data
+
+
+def gateway_store_bundle(params: JSONDict, job_file: Path, auth_headers: dict[str, str]) -> int:
+    source = job_path(job_file.parent, str(require_job_param(params, "bundle")))
+    enforce_bundle_policy(
+        source,
+        str(params.get("policy_preset", "report")),
+        bool(params.get("disallow_plaintext", False)),
+        bool(params.get("disallow_snapshots", False)),
+        bool(params.get("require_signature", False)),
+        bool(params.get("require_encryption", False)),
+        bool(params.get("require_digest_index", False)),
+    )
+    data = gateway_store_bundle_file(
+        gateway_base_url(params),
+        source,
+        gateway_timeout(params),
+        auth_headers,
+        str(params["bundle_id"]) if params.get("bundle_id") else None,
+        bool(params.get("force", False)),
+        str(params.get("content_type") or "application/vnd.session-capsule.scap"),
+    )
+    print(json.dumps(data, indent=2))
+    return 0
+
+
 def gateway_status_command(args: argparse.Namespace) -> int:
     params = gateway_cli_params(args)
     data = gateway_request_json(
@@ -4033,6 +4101,7 @@ def gateway_status_command(args: argparse.Namespace) -> int:
     print(f"bundles: {data.get('bundles')}")
     print(f"auth required: {'yes' if auth.get('required') else 'no'}")
     print(f"download: {'yes' if capabilities.get('download') else 'no'}")
+    print(f"store upload: {'yes' if capabilities.get('store_upload') else 'no'}")
     print(f"raw upload import: {'yes' if capabilities.get('raw_upload_import') else 'no'}")
     print(f"max upload bytes: {transport.get('max_upload_bytes') if isinstance(transport, dict) else None}")
     return 0
@@ -4088,6 +4157,23 @@ def gateway_download_command(args: argparse.Namespace) -> int:
     print(f"bundle_id: {result['bundle_id']}")
     print(f"bytes: {result['bytes']}")
     print(f"sha256: {result['sha256']}")
+    return 0
+
+
+def gateway_store_command(args: argparse.Namespace) -> int:
+    params = gateway_cli_params(args)
+    source = args.bundle.resolve()
+    enforce_bundle_policy_from_args(source, args)
+    data = gateway_store_bundle_file(
+        gateway_base_url(params),
+        source,
+        gateway_timeout(params),
+        gateway_cli_auth_headers(args),
+        args.bundle_id,
+        bool(args.force),
+        "application/vnd.session-capsule.scap",
+    )
+    print(json.dumps(data, indent=2))
     return 0
 
 
@@ -4185,6 +4271,13 @@ def add_gateway_upload_flags(parser: argparse.ArgumentParser) -> None:
     add_bundle_policy_flags(parser, include_json=False, preset_flag="--policy-preset")
 
 
+def add_gateway_store_flags(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--bundle", type=Path, required=True, help="Local .scap file to store without importing.")
+    parser.add_argument("--bundle-id", help="Stored bundle id for the uploaded .scap.")
+    parser.add_argument("--force", action="store_true", help="Overwrite an existing stored bundle with the same id.")
+    add_bundle_policy_flags(parser, include_json=False, preset_flag="--policy-preset")
+
+
 def add_bundle_policy_flags(
     parser: argparse.ArgumentParser,
     include_json: bool,
@@ -4265,6 +4358,8 @@ def gateway_transport_job(job_type: str, params: JSONDict, job_file: Path, auth_
         data = gateway_request_json("GET", f"{base}/api/capsules/bundles", None, timeout, auth_headers)
         print(json.dumps(data, indent=2))
         return 0
+    if job_type == "gateway_store_bundle":
+        return gateway_store_bundle(params, job_file, auth_headers)
     if job_type == "gateway_download_bundle":
         return gateway_download_bundle(params, job_file, auth_headers)
     if job_type == "gateway_import_bundle":
@@ -4598,6 +4693,11 @@ def build_parser() -> argparse.ArgumentParser:
     gateway_download.add_argument("--out", type=Path, required=True)
     add_gateway_json_flag(gateway_download)
     gateway_download.set_defaults(func=gateway_download_command)
+
+    gateway_store = gateway_sub.add_parser("store", help="Upload raw .scap bytes to the gateway bundle store without importing.")
+    add_gateway_client_args(gateway_store)
+    add_gateway_store_flags(gateway_store)
+    gateway_store.set_defaults(func=gateway_store_command)
 
     gateway_upload = gateway_sub.add_parser("upload", help="Upload raw .scap bytes to a gateway and import them.")
     add_gateway_client_args(gateway_upload)

@@ -121,6 +121,21 @@ def post_json(url: str, payload: dict[str, Any], headers: dict[str, str]) -> tup
         return body, {key: value for key, value in response.headers.items()}
 
 
+def post_json_failure(url: str, payload: dict[str, Any], headers: dict[str, str]) -> str:
+    encoded = json.dumps(payload).encode("utf-8")
+    req = request.Request(
+        url,
+        data=encoded,
+        headers={"Content-Type": "application/json", **headers},
+        method="POST",
+    )
+    try:
+        with request.urlopen(req, timeout=20) as response:
+            raise AssertionError(f"expected POST failure but got status {response.status}")
+    except error.HTTPError as exc:
+        return exc.read().decode("utf-8", errors="replace")
+
+
 def get_json(url: str, headers: dict[str, str] | None = None) -> dict[str, Any]:
     req = request.Request(url, headers=headers or {}, method="GET")
     with request.urlopen(req, timeout=20) as response:
@@ -296,7 +311,7 @@ def main() -> None:
             if "X-Capsule-Bundle-Id" not in preflight.get("Access-Control-Allow-Headers", ""):
                 raise AssertionError("gateway CORS preflight did not allow bundle upload headers")
             capabilities = transport.get("capabilities", {})
-            for capability in ["export", "download", "raw_upload_import", "stored_bundle_import", "delete", "bundle_policy_gate"]:
+            for capability in ["export", "download", "store_upload", "raw_upload_import", "stored_bundle_import", "delete", "bundle_policy_gate"]:
                 if capabilities.get(capability) is not True:
                     raise AssertionError(f"gateway transport status did not advertise {capability}")
             import_policy = transport.get("import_policy", {})
@@ -305,6 +320,8 @@ def main() -> None:
             if import_policy.get("verify_signature") is not False:
                 raise AssertionError("gateway transport status did not expose signature verification policy")
             endpoints = transport.get("endpoints", {})
+            if endpoints.get("store_bundle", {}).get("path") != "/api/capsules/bundles":
+                raise AssertionError("gateway transport status did not expose store path")
             if endpoints.get("download_bundle", {}).get("path_template") != "/api/capsules/bundles/{bundle_id}":
                 raise AssertionError("gateway transport status did not expose download path template")
             identity = status.get("identity", {})
@@ -560,6 +577,27 @@ def main() -> None:
             import_gateway_thread.start()
             import_gateway_url = f"http://127.0.0.1:{import_gateway.server_port}"
             try:
+                stored_plaintext, store_headers = post_bytes(
+                    f"{import_gateway_url}/api/capsules/bundles",
+                    bundle_bytes,
+                    {
+                        **auth_headers,
+                        "X-Capsule-Bundle-Id": "stored-plaintext-gateway-thread",
+                    },
+                )
+                if store_headers.get("X-Capsule-Bundle-Store") != "ok":
+                    raise AssertionError("gateway store endpoint did not mark response")
+                if stored_plaintext.get("bundle_id") != "stored-plaintext-gateway-thread":
+                    raise AssertionError("gateway store endpoint did not retain requested bundle id")
+                if (imported_state / "threads" / "gateway-thread").exists():
+                    raise AssertionError("store-only bundle upload unexpectedly imported thread state")
+                stored_policy_failure = post_json_failure(
+                    f"{import_gateway_url}/api/capsules/import",
+                    {"bundle_id": "stored-plaintext-gateway-thread", "thread_id": "gateway-thread-store-rejected", "force": True},
+                    auth_headers,
+                )
+                if "Bundle policy failed" not in stored_policy_failure:
+                    raise AssertionError("stored bundle import policy did not reject plaintext bundle")
                 policy_failure = post_bytes_failure(
                     f"{import_gateway_url}/api/capsules/import",
                     bundle_bytes,

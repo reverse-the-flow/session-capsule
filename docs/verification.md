@@ -25,7 +25,7 @@ It performs:
 - storage config, pinning, stats, and GC smoke test
 - Model Plane job-packet smoke test, including launch-profile rendering/checking, required transport capability gating, shutdown planning, signed export jobs, and authenticated gateway transport job packets
 - local gateway fake-backend smoke test
-- gateway auth plus signed bundle export/list/download/upload/delete smoke path
+- gateway auth plus signed bundle export/list/download/store/upload/delete smoke path
 - gateway status discovery for transport API version, upload size, content type, auth policy, signing policy, endpoint paths, and bundle capabilities
 - gateway status discovery for endpoint compatibility and hard checkpoint readiness
 - gateway status discovery for identity headers and Open WebUI/opencode metadata mappings
@@ -64,9 +64,10 @@ The gateway integration contract is verified by fake-backend tests that exercise
 - gateway CORS preflight and exposed download headers for browser-hosted upload/download controls
 - identity status discovery for Open WebUI and opencode thread metadata
 - state-relative ledger, prefill, and snapshot refs in runtime-written files
-- `.scap` export, list, download, raw upload import, and bundle delete
+- `.scap` export, list, download, store-only upload, raw upload import, and bundle delete
 - gateway redacted bundle export
 - gateway raw-upload and stored-bundle import target-thread override
+- gateway store-only upload without thread-state import
 - authenticated gateway requests and transport job packets when a token is configured
 - Model Plane gateway launch-profile command rendering, authenticated status checking, required capability rejection, endpoint readiness reporting, and inline secret-value rejection
 

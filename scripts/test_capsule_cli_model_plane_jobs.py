@@ -244,6 +244,7 @@ def main() -> None:
                             "require_status_transport": True,
                             "required_capabilities": [
                                 "download",
+                                "store_upload",
                                 "raw_upload_import",
                                 "stored_bundle_import",
                                 "thread_id_override",
@@ -277,7 +278,7 @@ def main() -> None:
             if profile_status_payload.get("endpoint_compatibility", {}).get("slot_probe", {}).get("status") != "slot_probe_missing":
                 raise AssertionError("gateway profile status check did not expose missing slot probe status for soft endpoint")
             required_capabilities = profile_status_payload.get("required_capabilities", [])
-            if "raw_upload_import" not in required_capabilities or "digest_verification" not in required_capabilities:
+            if "store_upload" not in required_capabilities or "digest_verification" not in required_capabilities:
                 raise AssertionError("gateway profile status check did not report required transfer capabilities")
             if "download" not in profile_status_payload.get("transport_capabilities", []):
                 raise AssertionError("gateway profile status check did not report advertised gateway capabilities")
@@ -331,6 +332,8 @@ def main() -> None:
             direct_status_payload = json.loads(direct_status.stdout)
             if direct_status_payload.get("transport", {}).get("capabilities", {}).get("download") is not True:
                 raise AssertionError("direct gateway status did not advertise download capability")
+            if direct_status_payload.get("transport", {}).get("capabilities", {}).get("store_upload") is not True:
+                raise AssertionError("direct gateway status did not advertise store upload capability")
             direct_list = run_cli(state, "gateway", "list", "--url", gateway_url, *direct_gateway_auth_args)
             if "job-thread-gateway" not in direct_list.stdout:
                 raise AssertionError("direct gateway list did not include exported bundle")
@@ -358,6 +361,20 @@ def main() -> None:
             run_cli(state, "job", "run", str(gateway_download_job), *gateway_auth_args)
             if not downloaded_bundle.exists() or not downloaded_bundle.read_bytes().startswith(b"PK"):
                 raise AssertionError("gateway download job did not write a .scap bundle")
+            gateway_store_job = jobs / "gateway-store.json"
+            write_job(
+                gateway_store_job,
+                "gateway_store_bundle",
+                {
+                    "gateway_url": gateway_url,
+                    "bundle": str(downloaded_bundle),
+                    "bundle_id": "job-thread-stored-only",
+                    "force": False,
+                },
+            )
+            gateway_store = run_cli(state, "job", "run", str(gateway_store_job), *gateway_auth_args)
+            if '"bundle_id": "job-thread-stored-only"' not in gateway_store.stdout:
+                raise AssertionError("gateway store job did not retain requested bundle id")
             direct_download = run_cli(
                 state,
                 "gateway",
@@ -374,6 +391,51 @@ def main() -> None:
             direct_download_payload = json.loads(direct_download.stdout)
             if not direct_downloaded_bundle.exists() or direct_download_payload.get("bytes", 0) <= 0:
                 raise AssertionError("direct gateway download did not write a .scap bundle")
+            direct_policy_store_failure = run_cli_failure(
+                state,
+                "gateway",
+                "store",
+                "--url",
+                gateway_url,
+                "--bundle",
+                str(direct_downloaded_bundle),
+                "--bundle-id",
+                "rejected-store-plaintext-job-thread",
+                "--policy-preset",
+                "metadata-only",
+                *direct_gateway_auth_args,
+            )
+            if "Bundle policy failed" not in direct_policy_store_failure.stderr:
+                raise AssertionError("direct gateway store did not enforce local bundle policy")
+            direct_store = run_cli(
+                state,
+                "gateway",
+                "store",
+                "--url",
+                gateway_url,
+                "--bundle",
+                str(direct_downloaded_bundle),
+                "--bundle-id",
+                "direct-stored-job-thread",
+                *direct_gateway_auth_args,
+            )
+            if '"bundle_id": "direct-stored-job-thread"' not in direct_store.stdout:
+                raise AssertionError("direct gateway store did not retain requested bundle id")
+            direct_stored_import = run_cli(
+                state,
+                "gateway",
+                "import",
+                "--url",
+                gateway_url,
+                "--bundle-id",
+                "direct-stored-job-thread",
+                "--thread-id",
+                "job-thread-direct-stored-only",
+                "--force",
+                *direct_gateway_auth_args,
+            )
+            if '"thread_id": "job-thread-direct-stored-only"' not in direct_stored_import.stdout:
+                raise AssertionError("direct gateway stored upload did not import as target thread")
             direct_policy_upload_failure = run_cli_failure(
                 state,
                 "gateway",
@@ -434,6 +496,18 @@ def main() -> None:
             )
             if '"deleted": true' not in direct_delete.stdout:
                 raise AssertionError("direct gateway delete did not delete uploaded bundle")
+            direct_stored_delete = run_cli(
+                state,
+                "gateway",
+                "delete",
+                "--url",
+                gateway_url,
+                "--bundle-id",
+                "direct-stored-job-thread",
+                *direct_gateway_auth_args,
+            )
+            if '"deleted": true' not in direct_stored_delete.stdout:
+                raise AssertionError("direct gateway delete did not delete stored-only bundle")
             direct_export_delete = run_cli(
                 state,
                 "gateway",
@@ -472,6 +546,15 @@ def main() -> None:
             gateway_import_stored = run_cli(state, "job", "run", str(gateway_import_stored_job), *gateway_auth_args)
             if '"thread_id": "job-thread-stored"' not in gateway_import_stored.stdout:
                 raise AssertionError("gateway stored import job did not use target thread override")
+            gateway_delete_stored_job = jobs / "gateway-delete-stored.json"
+            write_job(
+                gateway_delete_stored_job,
+                "gateway_delete_bundle",
+                {"gateway_url": gateway_url, "bundle_id": "job-thread-stored-only"},
+            )
+            gateway_delete_stored = run_cli(state, "job", "run", str(gateway_delete_stored_job), *gateway_auth_args)
+            if '"deleted": true' not in gateway_delete_stored.stdout:
+                raise AssertionError("gateway delete job did not remove stored-only bundle")
 
             gateway_delete_job = jobs / "gateway-delete.json"
             write_job(

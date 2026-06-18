@@ -220,6 +220,7 @@ Gateway transport exposes `.scap` bundles to local UIs or Model Plane:
 GET    /api/capsules/status
 POST   /api/capsules/export
 GET    /api/capsules/bundles
+POST   /api/capsules/bundles
 GET    /api/capsules/bundles/{bundle_id}
 POST   /api/capsules/import
 DELETE /api/capsules/bundles/{bundle_id}
@@ -267,6 +268,8 @@ Authenticated requests may use either:
 - `X-Capsule-Gateway-Key: TOKEN`
 
 Raw upload imports may use `X-Capsule-Import-Thread` to import the bundle as a new local thread id.
+
+Store-only upload uses `POST /api/capsules/bundles` and does not create thread state. Import is a separate explicit `POST /api/capsules/import`.
 
 ## Security
 
@@ -387,6 +390,7 @@ Supported job packet types:
 - `validate_capsule`
 - `gateway_export_bundle`
 - `gateway_list_bundles`
+- `gateway_store_bundle`
 - `gateway_download_bundle`
 - `gateway_import_bundle`
 - `gateway_delete_bundle`

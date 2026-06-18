@@ -362,6 +362,7 @@ def transport_contract(config: GatewayConfig) -> JSONDict:
             "export": True,
             "list": True,
             "download": True,
+            "store_upload": True,
             "raw_upload_import": True,
             "stored_bundle_import": True,
             "delete": True,
@@ -377,6 +378,7 @@ def transport_contract(config: GatewayConfig) -> JSONDict:
             "checkpoint": {"method": "POST", "path": "/api/capsules/checkpoint"},
             "export": {"method": "POST", "path": "/api/capsules/export"},
             "list_bundles": {"method": "GET", "path": "/api/capsules/bundles"},
+            "store_bundle": {"method": "POST", "path": "/api/capsules/bundles"},
             "download_bundle": {"method": "GET", "path_template": "/api/capsules/bundles/{bundle_id}"},
             "import": {"method": "POST", "path": "/api/capsules/import"},
             "delete_bundle": {"method": "DELETE", "path_template": "/api/capsules/bundles/{bundle_id}"},
@@ -557,6 +559,31 @@ def import_bundle_file(config: GatewayConfig, path: Path, force: bool = False, t
         "bundle_id": path.stem,
         "fallback": ledger.get("fallback", {}),
     }
+
+
+def store_bundle_api(config: GatewayConfig, handler: BaseHTTPRequestHandler) -> JSONDict:
+    body = read_raw_body(handler, config.max_bundle_bytes)
+    requested_id = handler.headers.get("X-Capsule-Bundle-Id")
+    bundle_id = safe_bundle_id(requested_id or f"upload-{datetime.now().astimezone().strftime('%Y%m%d-%H%M%S')}-{uuid.uuid4().hex[:8]}")
+    path = bundle_path(config, bundle_id)
+    force = handler.headers.get("X-Capsule-Bundle-Force", "").lower() in {"1", "true", "yes"}
+    if path.exists() and not force:
+        raise FileExistsError(f"Bundle already exists: {bundle_id}")
+    temp_path = path.with_name(f".{path.name}.{uuid.uuid4().hex}.tmp")
+    temp_path.write_bytes(body)
+    try:
+        integrity = cc.verify_bundle_integrity(temp_path)
+        if not integrity.get("verified"):
+            raise RuntimeError(f"Bundle integrity verification failed: {integrity.get('reason')}")
+        temp_path.replace(path)
+        metadata = bundle_metadata(config, path)
+        metadata["stored"] = True
+        metadata["verified"] = True
+        return metadata
+    except Exception:
+        with contextlib.suppress(FileNotFoundError):
+            temp_path.unlink()
+        raise
 
 
 def import_bundle_api(config: GatewayConfig, handler: BaseHTTPRequestHandler) -> JSONDict:
@@ -971,6 +998,9 @@ def make_handler(config: GatewayConfig) -> type[BaseHTTPRequestHandler]:
                 if parsed.path == "/api/capsules/import":
                     send_json(self, import_bundle_api(config, self), headers={"X-Capsule-Import": "ok"})
                     return
+                if parsed.path == "/api/capsules/bundles":
+                    send_json(self, store_bundle_api(config, self), headers={"X-Capsule-Bundle-Store": "ok"})
+                    return
                 body = read_body(self)
                 if parsed.path == "/v1/chat/completions":
                     handle_chat_completion(self, config, body)
@@ -1018,7 +1048,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--timeout", type=float, default=120.0)
     parser.add_argument("--default-prefill")
     parser.add_argument("--default-thread-prefix", default="gateway")
-    parser.add_argument("--max-bundle-bytes", default="5GB", help="Maximum raw .scap upload accepted by /api/capsules/import.")
+    parser.add_argument("--max-bundle-bytes", default="5GB", help="Maximum raw .scap upload accepted by bundle store/import endpoints.")
     parser.add_argument("--signature-key-file", type=Path, help="Optional local key file used to sign gateway exports and verify signed imports.")
     parser.add_argument("--signature-key-env", help="Optional environment variable containing the gateway bundle signing key.")
     parser.add_argument("--signature-key-id", help="Non-secret key label written into gateway-signed bundles.")

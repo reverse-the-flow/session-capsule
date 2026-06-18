@@ -6,7 +6,7 @@ Capsule transport is the upload/download layer for `.scap` bundles.
 
 It does not move model weights. It moves the portable thread artifact: ledger, transcript, endpoint metadata, capsule manifests, prefill sources, and optional same-runtime hard snapshots.
 
-The gateway owns local bundle creation, local bundle storage, download, upload, and import. Model Plane or another UI can call these endpoints instead of reimplementing export/import mechanics.
+The gateway owns local bundle creation, local bundle storage, store-only upload, download, upload-and-import, and import. Model Plane or another UI can call these endpoints instead of reimplementing export/import mechanics.
 
 Gateway bundle signing is launch policy. If the gateway is started with `--signature-key-file` or `--signature-key-env`, exported bundles are signed. If it is also started with `--require-bundle-signature`, imports must verify with that key before extraction.
 
@@ -16,7 +16,7 @@ Gateway bundle import policy is also launch policy. For example:
 py -3 .\scripts\capsule_gateway.py --state-dir .\.capsules --endpoint local-llamacpp --bundle-policy-preset metadata-only
 ```
 
-The gateway applies this policy to raw uploads and stored-bundle imports before extraction. The active policy is advertised from `/api/capsules/status` as `transport.import_policy`.
+The gateway applies this policy to raw upload-imports and stored-bundle imports before extraction. Store-only uploads are verified as `.scap` archives before entering the bundle store, but import policy is applied only when a bundle is imported. The active policy is advertised from `/api/capsules/status` as `transport.import_policy`.
 
 Gateway request auth is also launch policy. If the gateway is started with `--auth-token-file` or `--auth-token-env`, every request must include either:
 
@@ -33,6 +33,7 @@ The local gateway exposes:
 GET    /api/capsules/status
 POST   /api/capsules/export
 GET    /api/capsules/bundles
+POST   /api/capsules/bundles
 GET    /api/capsules/bundles/{bundle_id}
 POST   /api/capsules/import
 DELETE /api/capsules/bundles/{bundle_id}
@@ -65,6 +66,7 @@ The response includes a versioned `transport` object:
       "export": true,
       "list": true,
       "download": true,
+      "store_upload": true,
       "raw_upload_import": true,
       "stored_bundle_import": true,
       "delete": true,
@@ -75,6 +77,7 @@ The response includes a versioned `transport` object:
     },
     "endpoints": {
       "export": {"method": "POST", "path": "/api/capsules/export"},
+      "store_bundle": {"method": "POST", "path": "/api/capsules/bundles"},
       "download_bundle": {"method": "GET", "path_template": "/api/capsules/bundles/{bundle_id}"},
       "import": {"method": "POST", "path": "/api/capsules/import"}
     },
@@ -244,16 +247,30 @@ py -3 .\scripts\capsule_cli.py gateway status --url http://127.0.0.1:8765 --auth
 py -3 .\scripts\capsule_cli.py gateway list --url http://127.0.0.1:8765 --auth-token-file .\capsule-gateway-token
 py -3 .\scripts\capsule_cli.py gateway export --url http://127.0.0.1:8765 --thread research-loop --bundle-id research-loop --auth-token-file .\capsule-gateway-token
 py -3 .\scripts\capsule_cli.py gateway download --url http://127.0.0.1:8765 --bundle-id research-loop --out .\research-loop.scap --auth-token-file .\capsule-gateway-token
+py -3 .\scripts\capsule_cli.py gateway store --url http://127.0.0.1:8765 --bundle .\research-loop.scap --bundle-id stored-research-loop --auth-token-file .\capsule-gateway-token
 py -3 .\scripts\capsule_cli.py gateway upload --url http://127.0.0.1:8765 --bundle .\research-loop.scap --bundle-id uploaded-research-loop --thread-id research-loop-copy --auth-token-file .\capsule-gateway-token
 py -3 .\scripts\capsule_cli.py gateway import --url http://127.0.0.1:8765 --bundle-id uploaded-research-loop --thread-id research-loop-copy-2 --auth-token-file .\capsule-gateway-token
 py -3 .\scripts\capsule_cli.py gateway delete --url http://127.0.0.1:8765 --bundle-id uploaded-research-loop --auth-token-file .\capsule-gateway-token
 ```
 
-Add `--policy-preset metadata-only` to `gateway upload` when local upload should fail before any plaintext `.scap` bytes are sent.
+Use `gateway store` when the user only wants to place a bundle in the gateway bundle store for later download or explicit import. Use `gateway upload` when the operation should both upload and import. Add `--policy-preset metadata-only`, `signed-metadata-only`, or `sealed` to `gateway store` or `gateway upload` when the local command should fail before disallowed `.scap` bytes are sent.
 
 These commands are thin wrappers around the gateway API. They do not store auth tokens in `.capsules`, job packets, or bundle metadata.
 
-## Import
+## Store And Import
+
+Store raw `.scap` bytes without importing them:
+
+```powershell
+Invoke-RestMethod `
+  -Method Post `
+  -ContentType "application/vnd.session-capsule.scap" `
+  -Headers @{"X-Capsule-Bundle-Id" = "stored-research-loop"} `
+  -InFile .\research-loop.scap `
+  -Uri http://127.0.0.1:8765/api/capsules/bundles
+```
+
+Use `X-Capsule-Bundle-Force: true` only when intentionally replacing an existing stored bundle. Store-only upload verifies the digest-indexed `.scap` envelope and does not create thread state.
 
 Import a bundle already stored under `.capsules/bundles/`:
 
@@ -275,7 +292,7 @@ Invoke-RestMethod `
   -Body '{"bundle_id":"research-loop-20260618-112233-a1b2c3d4","thread_id":"research-loop-copy","force":false}'
 ```
 
-Upload and import raw `.scap` bytes:
+Upload and import raw `.scap` bytes in one step:
 
 ```powershell
 Invoke-RestMethod `
@@ -381,6 +398,7 @@ Implemented now:
 - required signature verification with `--require-signature`
 - gateway signing and required import verification through launch flags
 - gateway request-token authentication through launch flags
+- gateway store-only upload separate from import
 
 Not implemented yet:
 
@@ -396,6 +414,7 @@ The standalone harness can call the gateway transport API from Model Plane job p
 ```text
 gateway_export_bundle
 gateway_list_bundles
+gateway_store_bundle
 gateway_download_bundle
 gateway_import_bundle
 gateway_delete_bundle
@@ -409,7 +428,7 @@ examples/model-plane/gateway-*.example.json
 
 These job packets carry intent and policy inputs. They do not replace the gateway API; they call it.
 
-For `gateway_import_bundle`, `params.thread_id` is the target local thread id for the imported bundle.
+For `gateway_store_bundle`, `params.bundle` is stored without creating thread state. Store jobs may include `policy_preset` or the explicit bundle-policy booleans to fail locally before sending bytes. For `gateway_import_bundle`, `params.thread_id` is the target local thread id for the imported bundle.
 
 If the gateway requires auth, keep the token outside the packet and pass it to the standalone runner:
 

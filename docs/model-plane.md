@@ -39,6 +39,7 @@ Supported job types:
 - `validate_capsule`
 - `gateway_export_bundle`
 - `gateway_list_bundles`
+- `gateway_store_bundle`
 - `gateway_download_bundle`
 - `gateway_import_bundle`
 - `gateway_delete_bundle`
@@ -122,6 +123,8 @@ For UI-driven `.scap` transfer, Model Plane should call the gateway bundle endpo
 ```text
 GET    /api/capsules/status
 POST   /api/capsules/export
+GET    /api/capsules/bundles
+POST   /api/capsules/bundles
 GET    /api/capsules/bundles/{bundle_id}
 POST   /api/capsules/import
 ```
@@ -137,6 +140,7 @@ For upload/download controls, the launch profile should list at least:
       "export",
       "list",
       "download",
+      "store_upload",
       "raw_upload_import",
       "stored_bundle_import",
       "delete",
@@ -164,13 +168,14 @@ The standalone harness can execute those transport intents as job packets:
 
 ```powershell
 py -3 .\scripts\capsule_cli.py --state-dir .\.capsules job run .\examples\model-plane\gateway-export-bundle.example.json
+py -3 .\scripts\capsule_cli.py --state-dir .\.capsules job run .\examples\model-plane\gateway-store-bundle.example.json
 py -3 .\scripts\capsule_cli.py --state-dir .\.capsules job run .\examples\model-plane\gateway-download-bundle.example.json
 py -3 .\scripts\capsule_cli.py --state-dir .\.capsules job run .\examples\model-plane\gateway-import-bundle.example.json
 py -3 .\scripts\capsule_cli.py --state-dir .\.capsules job run .\examples\model-plane\export-thread.example.json --signature-key-file .\capsule-signing.key --signature-key-id local
 py -3 .\scripts\capsule_cli.py --state-dir .\.capsules job run .\examples\model-plane\gateway-download-bundle.example.json --gateway-auth-token-file .\capsule-gateway-token
 ```
 
-For `gateway_import_bundle`, `params.thread_id` is the target local thread id to import as. This lets Model Plane avoid clobbering an existing local thread when a user uploads or reimports a `.scap` bundle.
+For `gateway_store_bundle`, `params.bundle` is uploaded to the gateway bundle store without creating thread state. Store jobs may include `policy_preset` or explicit bundle-policy booleans to fail locally before sending bytes. For `gateway_import_bundle`, `params.thread_id` is the target local thread id to import as. This lets Model Plane avoid clobbering an existing local thread when a user uploads or reimports a `.scap` bundle.
 
 Before enabling external share/import affordances, Model Plane should inspect the bundle posture. For local files, call:
 

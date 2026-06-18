@@ -28,6 +28,7 @@
       "export",
       "list",
       "download",
+      "store_upload",
       "raw_upload_import",
       "stored_bundle_import",
       "delete",

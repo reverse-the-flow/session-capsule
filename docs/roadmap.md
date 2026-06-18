@@ -431,7 +431,7 @@ Implementation steps:
 - Add a gateway export endpoint backed by the existing CLI export path.
 - Store gateway-created bundles under `.capsules/bundles/`.
 - Add bundle listing and download endpoints.
-- Add raw `.scap` upload and import.
+- Add raw `.scap` store-only upload and raw upload-import.
 - Add import-by-existing-bundle for local control-plane workflows.
 - Add a stored-bundle delete endpoint for cleanup after transfer.
 - Keep export ledger-only by default.
@@ -450,6 +450,7 @@ Initial status:
 - `POST /api/capsules/export` creates a `.scap` bundle.
 - `GET /api/capsules/bundles` lists stored local bundles.
 - `GET /api/capsules/bundles/{bundle_id}` downloads a stored bundle with capsule-specific headers.
+- `POST /api/capsules/bundles` stores verified raw `.scap` bytes without importing them.
 - `POST /api/capsules/import` imports either an existing stored bundle or raw uploaded `.scap` bytes.
 - Gateway import accepts a target thread id through JSON `thread_id` or raw-upload `X-Capsule-Import-Thread`.
 - `DELETE /api/capsules/bundles/{bundle_id}` deletes a stored bundle without deleting imported thread state.
@@ -459,11 +460,12 @@ Initial status:
 - Gateway launch flags can sign exported bundles and require verified signatures before import.
 - The gateway launch flag `--cors-allow-origin` enables browser preflight for direct Model Plane upload/download controls.
 - `/api/capsules/status` advertises `transport.cors` so Model Plane can discover whether browser transfer is enabled for this gateway instance.
-- `scripts/test_capsule_gateway_fake_backend.py` validates export, list, download, raw upload import, and delete through the gateway.
+- `scripts/test_capsule_gateway_fake_backend.py` validates export, list, download, store-only upload, raw upload import, and delete through the gateway.
 - Model Plane job packets can now invoke the gateway transport endpoints through `capsule_cli.py job run`.
+- `gateway_store_bundle` job packets can place a `.scap` into the gateway bundle store without creating thread state.
 - `gateway_import_bundle` job packets can pass `params.thread_id` as the target local import thread id.
 - Protected gateway transport jobs authenticate through runner-side `--gateway-auth-token-file` or `--gateway-auth-token-env` flags.
-- Direct CLI gateway client commands now call the same transport API: `gateway status`, `gateway list`, `gateway export`, `gateway download`, `gateway upload`, `gateway import`, and `gateway delete`.
+- Direct CLI gateway client commands now call the same transport API: `gateway status`, `gateway list`, `gateway export`, `gateway download`, `gateway store`, `gateway upload`, `gateway import`, and `gateway delete`.
 - `scripts/test_capsule_cli_model_plane_jobs.py` validates protected direct CLI upload/download controls against the in-process gateway alongside Model Plane job packets.
 
 ## Stage 11: Bundle Integrity, Signing, And Sealing

@@ -274,6 +274,7 @@ The gateway also exposes local `.scap` bundle transport:
 GET    /api/capsules/status
 POST   /api/capsules/export
 GET    /api/capsules/bundles
+POST   /api/capsules/bundles
 GET    /api/capsules/bundles/{bundle_id}
 POST   /api/capsules/import
 DELETE /api/capsules/bundles/{bundle_id}
@@ -282,7 +283,7 @@ DELETE /api/capsules/bundles/{bundle_id}
 Model Plane should read `/api/capsules/status` first and use the response's `transport` object to discover endpoint paths, upload size, content type, auth policy, signing policy, CORS policy, and enabled bundle capabilities. Launch profiles can list `transport.required_capabilities`; `gateway check` verifies each required capability before Model Plane enables profile-dependent upload/download controls.
 
 Bundles are stored under `.capsules/bundles/`. Export defaults to ledger-only; hard snapshots require `include_snapshots=true`.
-Imports can target a new local thread id with `thread_id` in JSON control calls or `X-Capsule-Import-Thread` on raw `.scap` uploads.
+Store-only upload places a verified `.scap` in the bundle store without creating thread state. Imports can target a new local thread id with `thread_id` in JSON control calls or `X-Capsule-Import-Thread` on raw `.scap` upload-imports.
 
 Open WebUI and opencode setup examples live in:
 
@@ -317,6 +318,7 @@ Gateway upload/download can also be driven by Model Plane job packets:
 ```powershell
 py -3 .\scripts\capsule_cli.py --state-dir .\.capsules job run .\examples\model-plane\gateway-export-bundle.example.json --dry-run
 py -3 .\scripts\capsule_cli.py --state-dir .\.capsules job run .\examples\model-plane\export-thread.example.json --signature-key-file .\capsule-signing.key --signature-key-id local
+py -3 .\scripts\capsule_cli.py --state-dir .\.capsules job run .\examples\model-plane\gateway-store-bundle.example.json --gateway-auth-token-file .\capsule-gateway-token
 py -3 .\scripts\capsule_cli.py --state-dir .\.capsules job run .\examples\model-plane\gateway-download-bundle.example.json --gateway-auth-token-file .\capsule-gateway-token
 ```
 
@@ -326,6 +328,7 @@ Or call the running gateway directly from the standalone CLI:
 py -3 .\scripts\capsule_cli.py gateway status --url http://127.0.0.1:8765 --auth-token-file .\capsule-gateway-token --json
 py -3 .\scripts\capsule_cli.py gateway export --url http://127.0.0.1:8765 --thread research-loop --bundle-id research-loop --auth-token-file .\capsule-gateway-token
 py -3 .\scripts\capsule_cli.py gateway download --url http://127.0.0.1:8765 --bundle-id research-loop --out .\research-loop.scap --auth-token-file .\capsule-gateway-token
+py -3 .\scripts\capsule_cli.py gateway store --url http://127.0.0.1:8765 --bundle .\research-loop.scap --bundle-id stored-research-loop --auth-token-file .\capsule-gateway-token
 py -3 .\scripts\capsule_cli.py gateway upload --url http://127.0.0.1:8765 --bundle .\research-loop.scap --bundle-id uploaded-research-loop --thread-id research-loop-copy --auth-token-file .\capsule-gateway-token
 ```
 

@@ -30,6 +30,7 @@
         "validate_capsule",
         "gateway_export_bundle",
         "gateway_list_bundles",
+        "gateway_store_bundle",
         "gateway_download_bundle",
         "gateway_import_bundle",
         "gateway_delete_bundle"
@@ -114,6 +115,25 @@
         },
         "content_type": {
           "type": "string"
+        },
+        "policy_preset": {
+          "type": "string",
+          "enum": ["report", "metadata-only", "signed-metadata-only", "sealed"]
+        },
+        "disallow_plaintext": {
+          "type": "boolean"
+        },
+        "disallow_snapshots": {
+          "type": "boolean"
+        },
+        "require_signature": {
+          "type": "boolean"
+        },
+        "require_encryption": {
+          "type": "boolean"
+        },
+        "require_digest_index": {
+          "type": "boolean"
         }
       }
     },

@@ -22,6 +22,7 @@ TRANSPORT_CAPABILITY_NAMES = {
     "export",
     "list",
     "download",
+    "store_upload",
     "raw_upload_import",
     "stored_bundle_import",
     "delete",
@@ -345,6 +346,7 @@ def validate_model_plane_job(path: Path) -> None:
         "validate_capsule",
         "gateway_export_bundle",
         "gateway_list_bundles",
+        "gateway_store_bundle",
         "gateway_download_bundle",
         "gateway_import_bundle",
         "gateway_delete_bundle",
@@ -397,6 +399,15 @@ def validate_model_plane_job(path: Path) -> None:
                 require_bool(f"{name}.params.{key}", params[key])
     elif job_type == "gateway_list_bundles":
         require_keys(name, params, ["gateway_url"])
+    elif job_type == "gateway_store_bundle":
+        require_keys(name, params, ["gateway_url", "bundle"])
+        if "force" in params:
+            require_bool(f"{name}.params.force", params["force"])
+        if "policy_preset" in params and params["policy_preset"] not in {"report", "metadata-only", "signed-metadata-only", "sealed"}:
+            raise ValidationError(f"{name}.params.policy_preset is not supported")
+        for key in ["disallow_plaintext", "disallow_snapshots", "require_signature", "require_encryption", "require_digest_index"]:
+            if key in params:
+                require_bool(f"{name}.params.{key}", params[key])
     elif job_type == "gateway_download_bundle":
         require_keys(name, params, ["gateway_url", "bundle_id", "out"])
     elif job_type == "gateway_import_bundle":
