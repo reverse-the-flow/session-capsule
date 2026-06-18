@@ -108,13 +108,13 @@ A `.scap` bundle has its own top-level `manifest.json`. New exports include:
 - `integrity.file_digest_algorithm = sha256`
 - `file_digests`, covering every zip entry except `manifest.json`
 - `integrity.signature = null` or an HMAC-SHA256 signature object
-- `integrity.encryption = null`
+- `integrity.encryption = null` for plain exports, or an encryption metadata object for sealed envelopes
 
-The digest index detects corrupted, swapped, extra, missing, or duplicate bundle entries. HMAC-SHA256 signing can prove that the verifier and exporter share the same key. It is not public-key identity, and it does not encrypt the bundle.
+The digest index detects corrupted, swapped, extra, missing, or duplicate bundle entries. HMAC-SHA256 signing can prove that the verifier and exporter share the same key. It is not public-key identity, and it does not encrypt the bundle. Sealed envelopes delegate encryption to an external age-compatible command and must be unsealed before import.
 
 Redacted exports are metadata-only bundles. They omit transcript and prefill source text, write `transcript_redacted=true` into the thread ledger, set fallback mode to `unavailable_redacted_transcript`, and set `prefill_source.source_redacted=true` when a prefill manifest is included without its source file. Redaction is not encryption; hard snapshots and metadata may still reveal sensitive state.
 
-`inspect --bundle BUNDLE.scap` derives a share/import classification from the bundle manifest and zip entries. Current classifications are `contains_plaintext_content`, `contains_unencrypted_snapshots`, `metadata_only_not_encrypted`, and future `encrypted`. Gateway bundle listings expose the same value as `share_safety` so launchers and UIs can gate upload/download affordances without parsing the archive format themselves.
+`inspect --bundle BUNDLE.scap` derives a share/import classification from the bundle manifest and zip entries. Current classifications are `contains_plaintext_content`, `contains_unencrypted_snapshots`, `metadata_only_not_encrypted`, and `encrypted`. Gateway bundle listings expose the same value as `share_safety` so launchers and UIs can gate upload/download affordances without parsing the archive format themselves.
 
 `bundle-policy BUNDLE.scap --preset PRESET` turns that inspection into an exit-code gate. `metadata-only` rejects plaintext transcript/prefill content and snapshots, `signed-metadata-only` also requires a signature envelope, and `sealed` requires an encryption envelope.
 
