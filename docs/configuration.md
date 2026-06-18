@@ -212,6 +212,14 @@ They include:
 - slot API fields
 - latest `endpoint doctor` slot probe evidence, including `/slots` response shape, sample keys, candidate slot identity fields, configured chat slot field, and visible context/processing fields
 
+Aggregate endpoint compatibility for launchers:
+
+```powershell
+py -3 .\scripts\capsule_cli.py endpoint matrix --json
+```
+
+The matrix reads `.capsules/endpoints/*.json` and reports each endpoint's runtime metadata, slot API fields, hard-capsule capability, and summarized slot probe status. It does not call the model server; run `endpoint doctor` first when fresh evidence is needed.
+
 ## State References
 
 Ledger and manifest files use paths relative to the selected capsule state directory:

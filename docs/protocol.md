@@ -31,6 +31,8 @@ The first hard local target is a `llama.cpp` endpoint with `/slots` and slot sav
 
 `endpoint doctor` records a `doctor.slot_probe` object in the endpoint record. It captures the `/slots` response shape, slot count, sample keys, candidate slot identity fields such as `id` or `id_slot`, the configured chat-completion slot field, and whether context/processing fields are visible. This keeps live slot API evidence next to the endpoint instead of relying on a fixed assumption about every `llama.cpp` build.
 
+`endpoint matrix --json` aggregates those endpoint records into a `session_capsule_endpoint_matrix` report. Launchers can read that report before exposing hard capsule controls, while `endpoint doctor` remains the live probe that refreshes the underlying evidence.
+
 ### Thread Ledger
 
 The thread ledger is the source of truth for a thread. It tracks:

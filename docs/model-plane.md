@@ -70,6 +70,14 @@ Model Plane job packet
 
 This keeps the standalone CLI and gateway useful without Model Plane. It also lets Model Plane schedule capsule-aware work later without learning runtime-specific slot APIs.
 
+Before exposing hard capsule controls for an endpoint, Model Plane can read the local compatibility matrix:
+
+```powershell
+py -3 .\scripts\capsule_cli.py endpoint matrix --json
+```
+
+That report summarizes endpoint records and their latest `endpoint doctor` slot probe status. It is a cache view, not a live health check; run `endpoint doctor ENDPOINT --strict` first when the runtime may have changed.
+
 ## Gateway Launch Profiles
 
 Model Plane can launch the gateway from a small profile instead of hardcoding CLI flags:

@@ -139,6 +139,7 @@ Run the local hard-capsule lifecycle against a `llama.cpp` endpoint with slot sa
 
 ```powershell
 py -3 .\scripts\capsule_cli.py endpoint doctor local-llamacpp --strict
+py -3 .\scripts\capsule_cli.py endpoint matrix --json
 py -3 .\scripts\capsule_cli.py thread append --thread research-loop-small --role user --content "Runtime-visible prompt delta."
 py -3 .\scripts\capsule_cli.py checkpoint --thread research-loop-small --hard --slot 0
 py -3 .\scripts\capsule_cli.py thread append --thread research-loop-small --role tool --content "Tool output after checkpoint."
@@ -146,7 +147,7 @@ py -3 .\scripts\capsule_cli.py resume --thread research-loop-small --slot 1 --ap
 py -3 .\scripts\capsule_cli.py shutdown --thread research-loop-small --slot 1 --force
 ```
 
-`endpoint doctor` records `/slots` probe evidence in the endpoint record: response shape, sample keys, candidate slot identity fields, configured chat slot field, and visible `n_ctx` / `is_processing` fields.
+`endpoint doctor` records `/slots` probe evidence in the endpoint record: response shape, sample keys, candidate slot identity fields, configured chat slot field, and visible `n_ctx` / `is_processing` fields. `endpoint matrix --json` aggregates those endpoint records into a compatibility report that Model Plane or a launcher can read before enabling hard capsule controls.
 
 If the model server runs in Docker, pass `--runtime-filename` when saving hard checkpoints so the filename is visible from inside the container's `--slot-save-path` mount.
 

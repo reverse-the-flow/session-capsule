@@ -565,6 +565,7 @@ Initial status:
 - `capsule_cli.py gateway check PROFILE --json` calls the profile status URL, authenticates from the profile's request-auth reference, and verifies the live gateway status/transport contract.
 - `security.bundle_import_policy` maps to gateway-side `--bundle-policy-*` import rejection flags and is verified against `transport.import_policy`.
 - `gateway.cors_allow_origin` maps to `--cors-allow-origin` and is checked against `transport.cors` when present.
+- `capsule_cli.py endpoint matrix --json` gives Model Plane a cache view of endpoint slot compatibility before it exposes hard capsule controls.
 - `scripts/validate_schema_examples.py` validates launch profiles separately from job packets.
 - `scripts/test_capsule_cli_model_plane_jobs.py` verifies launch-profile command rendering, authenticated status checking, and inline secret-value rejection.
 - `docs/model-plane.md` and `docs/configuration.md` explain how Model Plane maps the profile to gateway launch flags and status discovery.
@@ -702,10 +703,11 @@ Initial status:
 - The schema layer models `restore_failed` links and manifest `last_restore_failed_at` / `last_restore_error` lifecycle fields.
 - `shutdown --thread X --slot N` saves a dirty thread before model unload.
 - `endpoint doctor` persists `doctor.slot_probe` evidence for `/slots` response shape, sample keys, candidate slot identity fields, configured chat slot field, and visible context/processing fields.
-- `scripts/test_capsule_cli_fake_llamacpp.py` validates the save/restore/append-diff request path and failed-restore fallback against a fake slot server.
+- `endpoint matrix --json` aggregates endpoint records into a `session_capsule_endpoint_matrix` report for launchers.
+- `scripts/test_capsule_cli_fake_llamacpp.py` validates the save/restore/append-diff request path, endpoint matrix report, and failed-restore fallback against a fake slot server.
 
 ## Open Questions
 
-- Which live `llama.cpp` server builds should be added to a slot-probe compatibility matrix?
+- Which live `llama.cpp` server builds should be captured with `endpoint doctor` and listed in the endpoint matrix?
 - Which opencode hook should fill per-session capsule headers automatically instead of relying on launch-time environment variables?
 - Which cross-platform encryption backend should provide the future sealed `.scap` envelope without inventing local crypto?

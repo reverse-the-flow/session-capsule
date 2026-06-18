@@ -183,6 +183,20 @@ def main() -> None:
                 raise AssertionError("endpoint doctor should distinguish chat slot field from /slots identity field")
             if slot_probe.get("n_ctx_values") != [8192]:
                 raise AssertionError("endpoint doctor did not persist n_ctx values")
+            matrix = run_cli(state, "endpoint", "matrix", "--json")
+            matrix_report = json.loads(matrix.stdout)
+            if matrix_report.get("report_type") != "session_capsule_endpoint_matrix":
+                raise AssertionError("endpoint matrix did not emit the expected report type")
+            matrix_endpoint = matrix_report["endpoints"][0]
+            if matrix_endpoint["endpoint_id"] != "local-llamacpp":
+                raise AssertionError("endpoint matrix did not include the fake endpoint")
+            if matrix_endpoint["slot_probe"]["status"] != "slot_probe_ok":
+                raise AssertionError("endpoint matrix did not summarize successful slot probing")
+            if matrix_endpoint["slot_probe"]["slot_identity_fields"] != ["id"]:
+                raise AssertionError("endpoint matrix did not preserve slot identity fields")
+            matrix_text = run_cli(state, "endpoint", "matrix")
+            if "status=slot_probe_ok" not in matrix_text.stdout or "n_ctx=8192" not in matrix_text.stdout:
+                raise AssertionError("endpoint matrix human output did not summarize probe status")
             source_path = Path(temp) / "user_prefill.md"
             source_path.write_text("Stable user prefill for fake runtime.", encoding="utf-8")
             run_cli(

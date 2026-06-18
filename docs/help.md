@@ -39,6 +39,15 @@ py -3 .\scripts\capsule_cli.py endpoint doctor local-llamacpp --strict
 
 Doctor records `/slots` evidence in the endpoint record: response shape, sample keys, candidate slot identity fields, configured chat slot field, and visible `n_ctx` / `is_processing` fields.
 
+Summarize probed endpoint compatibility:
+
+```powershell
+py -3 .\scripts\capsule_cli.py endpoint matrix
+py -3 .\scripts\capsule_cli.py endpoint matrix --json
+```
+
+The JSON form is the launcher-facing compatibility report for hard capsule controls.
+
 Start a thread:
 
 ```powershell

@@ -49,6 +49,10 @@ def main() -> None:
     if "policy: project_local_default" not in state_info or "default_state_dir: .capsules" not in state_info:
         raise AssertionError("state info did not report the v0 state location policy")
 
+    endpoint = run_cli("help", "endpoint")
+    if "endpoint matrix" not in endpoint or "--json" not in endpoint:
+        raise AssertionError("endpoint help did not include slot compatibility matrix command")
+
     gateway = run_cli("help", "gateway")
     if "http://127.0.0.1:8765/v1" not in gateway:
         raise AssertionError("gateway help did not include client base URL")

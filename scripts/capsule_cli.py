@@ -180,6 +180,10 @@ Useful metadata:
 Check hard capsule support:
   py -3 .\\scripts\\capsule_cli.py endpoint doctor local-llamacpp --strict
 
+Summarize endpoint slot compatibility:
+  py -3 .\\scripts\\capsule_cli.py endpoint matrix
+  py -3 .\\scripts\\capsule_cli.py endpoint matrix --json
+
 Doctor records slot probe evidence in the endpoint record:
   /slots response shape
   sample slot keys
@@ -910,6 +914,138 @@ def endpoint_doctor(args: argparse.Namespace) -> int:
     else:
         print(f"slots response was not recognized as a slot list ({slot_probe['response_shape']})")
     return 0 if slot_save_restore or not args.strict else 1
+
+
+def slot_probe_status(endpoint: JSONDict) -> str:
+    doctor = endpoint.get("doctor")
+    if not isinstance(doctor, dict):
+        return "slot_probe_missing"
+    probe = doctor.get("slot_probe")
+    if not isinstance(probe, dict):
+        return "slot_probe_missing"
+    slot_count = probe.get("slot_count")
+    if not isinstance(slot_count, int):
+        return "slot_probe_unrecognized"
+    if slot_count <= 0:
+        return "no_slots"
+    capabilities = endpoint.get("capabilities")
+    if isinstance(capabilities, dict) and capabilities.get("slot_save_restore") is True:
+        return "slot_probe_ok"
+    return "slot_probe_degraded"
+
+
+def endpoint_matrix_report(store: Store) -> JSONDict:
+    endpoints: list[JSONDict] = []
+    endpoint_paths = sorted(store.endpoints_dir.glob("*.json")) if store.endpoints_dir.exists() else []
+    for path in endpoint_paths:
+        endpoint = read_json(path)
+        runtime = endpoint.get("runtime", {})
+        capabilities = endpoint.get("capabilities", {})
+        slot_api = endpoint.get("slot_api", {})
+        doctor = endpoint.get("doctor", {})
+        probe = doctor.get("slot_probe", {}) if isinstance(doctor, dict) else {}
+        if not isinstance(runtime, dict):
+            runtime = {}
+        if not isinstance(capabilities, dict):
+            capabilities = {}
+        if not isinstance(slot_api, dict):
+            slot_api = {}
+        if not isinstance(probe, dict):
+            probe = {}
+        slot_probe = {
+            "status": slot_probe_status(endpoint),
+            "response_shape": probe.get("response_shape"),
+            "slot_count": probe.get("slot_count"),
+            "sample_keys": probe.get("sample_keys", []),
+            "slot_identity_fields": probe.get("slot_identity_fields", []),
+            "configured_slot_field": probe.get("configured_slot_field"),
+            "configured_slot_field_seen_in_slots": probe.get("configured_slot_field_seen_in_slots"),
+            "has_n_ctx": probe.get("has_n_ctx"),
+            "n_ctx_values": probe.get("n_ctx_values", []),
+            "has_is_processing": probe.get("has_is_processing"),
+            "is_processing_values": probe.get("is_processing_values", []),
+        }
+        endpoints.append(
+            {
+                "endpoint_id": endpoint.get("endpoint_id") or path.stem,
+                "type": endpoint.get("type"),
+                "base_url": endpoint.get("base_url"),
+                "checked_at": endpoint.get("checked_at"),
+                "runtime": {
+                    "name": runtime.get("name"),
+                    "build": runtime.get("build"),
+                    "model_ref": runtime.get("model_ref"),
+                    "model_hash": runtime.get("model_hash"),
+                    "tokenizer_hash": runtime.get("tokenizer_hash"),
+                    "context_limit": runtime.get("context_limit"),
+                },
+                "capabilities": {
+                    "soft_capsules": capabilities.get("soft_capsules"),
+                    "slot_save_restore": capabilities.get("slot_save_restore"),
+                    "server_side_handles": capabilities.get("server_side_handles"),
+                    "user_carried_blobs": capabilities.get("user_carried_blobs"),
+                    "sealed_blobs": capabilities.get("sealed_blobs"),
+                    "transcript_replay_fallback": capabilities.get("transcript_replay_fallback"),
+                },
+                "slot_api": {
+                    "slots_path": slot_api.get("slots_path"),
+                    "save_action": slot_api.get("save_action"),
+                    "restore_action": slot_api.get("restore_action"),
+                    "slot_field": slot_api.get("slot_field"),
+                },
+                "doctor": {
+                    "slots_url": doctor.get("slots_url") if isinstance(doctor, dict) else None,
+                    "client_duration_ms": doctor.get("client_duration_ms") if isinstance(doctor, dict) else None,
+                },
+                "slot_probe": slot_probe,
+            }
+        )
+    return {
+        "schema_version": "0.1",
+        "report_type": "session_capsule_endpoint_matrix",
+        "generated_at": now_iso(),
+        "state_dir": str(store.root.resolve()),
+        "endpoint_count": len(endpoints),
+        "endpoints": endpoints,
+    }
+
+
+def format_matrix_values(values: Any) -> str:
+    if isinstance(values, list):
+        return ",".join(str(value) for value in values) if values else "none"
+    if values is None:
+        return "unknown"
+    return str(values)
+
+
+def endpoint_matrix(args: argparse.Namespace) -> int:
+    store = Store(args.state_dir)
+    report = endpoint_matrix_report(store)
+    if args.json:
+        print(json.dumps(report, indent=2))
+        return 0
+    print(f"state_dir: {report['state_dir']}")
+    print(f"endpoints: {report['endpoint_count']}")
+    for endpoint in report["endpoints"]:
+        runtime = endpoint["runtime"]
+        probe = endpoint["slot_probe"]
+        print(
+            " | ".join(
+                [
+                    str(endpoint["endpoint_id"]),
+                    f"type={endpoint.get('type')}",
+                    f"model={runtime.get('model_ref')}",
+                    f"build={runtime.get('build')}",
+                    f"status={probe.get('status')}",
+                    f"slots={probe.get('slot_count')}",
+                    f"shape={probe.get('response_shape')}",
+                    f"ids={format_matrix_values(probe.get('slot_identity_fields'))}",
+                    f"slot_field={probe.get('configured_slot_field')}",
+                    f"n_ctx={format_matrix_values(probe.get('n_ctx_values'))}",
+                ]
+            )
+        )
+    return 0
 
 
 def load_prefill_source(args: argparse.Namespace) -> str:
@@ -4008,6 +4144,10 @@ def build_parser() -> argparse.ArgumentParser:
     doctor.add_argument("--timeout", type=float, default=2.0)
     doctor.add_argument("--strict", action="store_true")
     doctor.set_defaults(func=endpoint_doctor)
+
+    matrix = endpoint_sub.add_parser("matrix", help="Summarize endpoint doctor slot probes.")
+    matrix.add_argument("--json", action="store_true", help="Print a machine-readable compatibility report.")
+    matrix.set_defaults(func=endpoint_matrix)
 
     thread = subcommands.add_parser("thread")
     thread_sub = thread.add_subparsers(dest="thread_command", required=True)
