@@ -87,6 +87,8 @@ Thread reload should happen in this order:
 
 If restore fails, fallback to transcript replay and write a new checkpoint when the runtime reaches a stable boundary. The CLI marks that capsule `restore_failed` rather than deleting the snapshot, skips it for future automatic restore, replays with `cache_prompt=false`, and saves a replacement checkpoint when `--append-diff` is requested.
 
+The ledger schema allows `restore_failed` capsule links with `last_restore_failed_at`. The manifest lifecycle records `last_restore_failed_at` and `last_restore_error` so the failed runtime path remains auditable without deleting the snapshot blob.
+
 The CLI implements this as:
 
 ```powershell

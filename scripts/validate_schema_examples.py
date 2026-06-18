@@ -55,6 +55,26 @@ def validate_schema_files() -> None:
         if schema["type"] != "object":
             raise ValidationError(f"{filename} root type must be object")
 
+    thread_schema = load_json(SCHEMAS / "thread-ledger.schema.json")
+    status_enum = (
+        thread_schema.get("$defs", {})
+        .get("capsule_link", {})
+        .get("properties", {})
+        .get("status", {})
+        .get("enum", [])
+    )
+    if "restore_failed" not in status_enum:
+        raise ValidationError("thread-ledger schema must allow restore_failed capsule links")
+    link_props = thread_schema.get("$defs", {}).get("capsule_link", {}).get("properties", {})
+    if "last_restore_failed_at" not in link_props:
+        raise ValidationError("thread-ledger schema must record last_restore_failed_at on capsule links")
+
+    manifest_schema = load_json(SCHEMAS / "capsule-manifest.schema.json")
+    lifecycle_props = manifest_schema.get("properties", {}).get("lifecycle", {}).get("properties", {})
+    for key in ["last_restore_failed_at", "last_restore_error"]:
+        if key not in lifecycle_props:
+            raise ValidationError(f"capsule-manifest schema lifecycle must include {key}")
+
 
 def validate_endpoint(data: dict[str, Any]) -> None:
     require_keys(

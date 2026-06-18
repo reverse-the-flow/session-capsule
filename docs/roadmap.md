@@ -95,6 +95,12 @@ Exit criteria:
 - The thread ledger can answer: latest compatible capsule, diff after checkpoint, fallback replay range.
 - The capsule manifest can answer: can this endpoint restore this snapshot?
 
+Initial status:
+
+- `schemas/thread-ledger.schema.json` allows capsule links to become `missing` or `restore_failed`.
+- `schemas/capsule-manifest.schema.json` records snapshot lifecycle and last restore failure metadata.
+- `scripts/validate_schema_examples.py` checks the schema files include restore-failure fields.
+
 ## Stage 2: CLI Soft Capsules
 
 Goal: Build useful thread bookkeeping before depending on hard KV restore.
@@ -559,6 +565,7 @@ Initial status:
 - `resume --thread X --slot N` restores the latest compatible hard capsule.
 - `resume --append-diff` posts transcript messages after the checkpoint into the restored slot with `cache_prompt=true`.
 - If hard restore fails, `resume --append-diff` marks that capsule `restore_failed`, replays the canonical transcript with `cache_prompt=false`, and saves a replacement hard checkpoint.
+- The schema layer models `restore_failed` links and manifest `last_restore_failed_at` / `last_restore_error` lifecycle fields.
 - `shutdown --thread X --slot N` saves a dirty thread before model unload.
 - `scripts/test_capsule_cli_fake_llamacpp.py` validates the save/restore/append-diff request path and failed-restore fallback against a fake slot server.
 

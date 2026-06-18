@@ -139,8 +139,13 @@
             "active",
             "superseded",
             "invalid",
-            "missing"
+            "missing",
+            "restore_failed"
           ]
+        },
+        "last_restore_failed_at": {
+          "type": "string",
+          "format": "date-time"
         },
         "pinned": {
           "type": "boolean"

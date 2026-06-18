@@ -221,6 +221,13 @@
         },
         "snapshot_delete_reason": {
           "type": "string"
+        },
+        "last_restore_failed_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "last_restore_error": {
+          "type": "string"
         }
       }
     },
