@@ -58,7 +58,11 @@ def main() -> None:
         raise AssertionError("model-plane help did not include export job signing flags")
 
     security = run_cli("help", "security")
-    if "optional HMAC-SHA256 bundle signatures" not in security or "keys are not written into .capsules state" not in security:
+    if (
+        "optional HMAC-SHA256 bundle signatures" not in security
+        or "keys are not written into .capsules state" not in security
+        or "import warns on local endpoint metadata conflicts" not in security
+    ):
         raise AssertionError("security help did not explain integrity boundary")
 
     print("CLI conceptual help smoke test ok")

@@ -51,6 +51,7 @@ def main() -> None:
         temp_path = Path(temp)
         source_state = temp_path / "source" / ".capsules"
         imported_state = temp_path / "imported" / ".capsules"
+        conflict_state = temp_path / "conflict" / ".capsules"
         signed_import_state = temp_path / "signed-imported" / ".capsules"
         prefill_path = temp_path / "prefill.md"
         bundle_path = temp_path / "thread.scap"
@@ -128,6 +129,28 @@ def main() -> None:
         if ledger["active_capsule_id"] is None:
             raise AssertionError("imported ledger did not preserve active capsule")
         run_cli(imported_state, "inspect", "--thread", "export-thread")
+
+        run_cli(
+            conflict_state,
+            "endpoint",
+            "add",
+            "local-soft",
+            "--type",
+            "hosted",
+            "--base-url",
+            "http://other.invalid",
+            "--model-ref",
+            "other-hosted-model",
+            "--model-hash",
+            "sha256-other-model",
+            "--tokenizer-hash",
+            "sha256-other-tokenizer",
+            "--context-limit",
+            "1024",
+        )
+        conflict_import = run_cli(conflict_state, "import", str(bundle_path))
+        if "warning: endpoint local-soft differs from local endpoint" not in conflict_import.stdout:
+            raise AssertionError("import did not warn about endpoint compatibility mismatch")
 
         tampered_bundle = temp_path / "tampered.scap"
         tampered_bundle.write_bytes(bundle_path.read_bytes())

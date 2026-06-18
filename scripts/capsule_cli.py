@@ -274,6 +274,8 @@ Include local hard snapshots only when intentionally moving same-runtime blobs:
 Import:
   py -3 .\\scripts\\capsule_cli.py import .\\research-loop.scap
 
+Import warns when an incoming endpoint id already exists locally with different runtime metadata.
+
 Verify bundle integrity:
   py -3 .\\scripts\\capsule_cli.py verify .\\research-loop.scap
 
@@ -289,6 +291,7 @@ For gateway upload/download transport:
   implemented: optional HMAC-SHA256 bundle signatures
   implemented: capsule verify rejects duplicate or digest-mismatched bundle entries
   implemented: import verifies bundles that include file_digests
+  implemented: import warns on local endpoint metadata conflicts
   not implemented yet: encryption or sealed user-carried blobs
 
 Commands:
@@ -1833,6 +1836,61 @@ def verify_bundle_integrity(
     }
 
 
+def bundle_json(bundle: zipfile.ZipFile, name: str) -> JSONDict:
+    data = json.loads(bundle.read(name).decode("utf-8"))
+    if not isinstance(data, dict):
+        raise RuntimeError(f"Bundle entry is not a JSON object: {name}")
+    return data
+
+
+def nested_value(payload: JSONDict, path: str) -> Any:
+    current: Any = payload
+    for part in path.split("."):
+        if not isinstance(current, dict):
+            return None
+        current = current.get(part)
+    return current
+
+
+def import_compatibility_warnings(store: Store, bundle: zipfile.ZipFile) -> list[str]:
+    warnings: list[str] = []
+    endpoint_names = sorted(
+        safe_zip_name(item.filename)
+        for item in bundle.infolist()
+        if safe_zip_name(item.filename).startswith("endpoints/") and safe_zip_name(item.filename).endswith(".json")
+    )
+    compare_fields = [
+        "type",
+        "base_url",
+        "runtime.name",
+        "runtime.build",
+        "runtime.model_ref",
+        "runtime.model_hash",
+        "runtime.tokenizer_hash",
+        "runtime.context_limit",
+        "slot_api.slot_field",
+    ]
+    for name in endpoint_names:
+        incoming = bundle_json(bundle, name)
+        endpoint_id = str(incoming.get("endpoint_id") or Path(name).stem)
+        local_path = store.endpoint_path(endpoint_id)
+        if not local_path.exists():
+            continue
+        local = read_json(local_path)
+        differences = []
+        for field in compare_fields:
+            local_value = nested_value(local, field)
+            incoming_value = nested_value(incoming, field)
+            if local_value != incoming_value:
+                differences.append(f"{field}: local={local_value!r} bundle={incoming_value!r}")
+        if differences:
+            warnings.append(
+                f"endpoint {endpoint_id} differs from local endpoint ({'; '.join(differences)}); "
+                "imported endpoint metadata will overwrite the local endpoint record"
+            )
+    return warnings
+
+
 def export_bundle(args: argparse.Namespace) -> int:
     store = Store(args.state_dir)
     ledger = store.load_ledger(args.thread)
@@ -1924,6 +1982,7 @@ def import_bundle(args: argparse.Namespace) -> int:
         target_ledger = store.ledger_path(thread_id)
         if target_ledger.exists() and not args.force:
             raise FileExistsError(f"Thread already exists: {thread_id}")
+        compatibility_warnings = import_compatibility_warnings(store, bundle)
 
         extracted = 0
         for item in bundle.infolist():
@@ -1941,6 +2000,8 @@ def import_bundle(args: argparse.Namespace) -> int:
     print(f"imported bundle: {bundle_path}")
     print(f"thread: {thread_id}")
     print(f"files: {extracted}")
+    for warning in compatibility_warnings:
+        print(f"warning: {warning}")
     if bundle_manifest.get("omitted_snapshots"):
         print(f"warning: omitted snapshots: {len(bundle_manifest['omitted_snapshots'])}")
     if bundle_manifest.get("redacted_transcript"):

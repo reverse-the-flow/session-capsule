@@ -168,6 +168,8 @@ py -3 .\scripts\capsule_cli.py import .\research-loop-small.scap
 
 By default, `.scap` export is ledger-only: it includes endpoint metadata, thread ledger, transcript, capsule manifests, prefill sources, and per-entry file digests, but omits hard snapshot blobs. Add `--include-snapshots` only when intentionally moving same-runtime local snapshot files.
 
+Import warns when the bundle endpoint id already exists locally with different runtime, model, tokenizer, context, slot, or URL metadata.
+
 Optional HMAC signing uses an explicit key source and does not store secrets in `.capsules`:
 
 ```powershell

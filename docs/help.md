@@ -214,7 +214,7 @@ Preview export size without writing:
 py -3 .\scripts\capsule_cli.py export --thread research-loop --out .\research-loop.scap --dry-run
 ```
 
-Import verifies bundles that include `file_digests` and rejects duplicate or digest-mismatched entries.
+Import verifies bundles that include `file_digests`, rejects duplicate or digest-mismatched entries, and warns when an incoming endpoint record differs from an existing local endpoint with the same id.
 
 Current boundary:
 

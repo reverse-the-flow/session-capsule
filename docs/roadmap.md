@@ -237,7 +237,8 @@ Initial status:
 - Snapshot blobs are omitted by default and require `--include-snapshots`.
 - `export --dry-run` prints the planned bundle entries and estimated payload bytes before writing.
 - `import X.scap` restores endpoint, prefill, and thread files into a fresh state directory.
-- `scripts/test_capsule_cli_export_import.py` validates a ledger-only bundle round trip.
+- `import X.scap` warns when the bundle endpoint id already exists locally with different runtime, model, tokenizer, context, slot, or URL metadata.
+- `scripts/test_capsule_cli_export_import.py` validates a ledger-only bundle round trip, dry-run sizing, and endpoint compatibility warnings.
 
 ## Stage 6: Local Capsule Gateway
 

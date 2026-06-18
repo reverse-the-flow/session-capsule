@@ -15,7 +15,7 @@ It performs:
 - schema/example validation
 - conceptual CLI help smoke test
 - fake `llama.cpp` hard capsule save/restore smoke test
-- `.scap` export/import/verify, dry-run sizing, signature, and tamper-rejection smoke test
+- `.scap` export/import/verify, dry-run sizing, endpoint compatibility warning, signature, and tamper-rejection smoke test
 - storage config, pinning, stats, and GC smoke test
 - Model Plane job-packet smoke test, including signed export jobs and authenticated gateway transport job packets
 - local gateway fake-backend smoke test
