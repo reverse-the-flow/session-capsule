@@ -91,6 +91,7 @@ The launch profile describes:
 
 - gateway state directory, endpoint id, host, port, checkpoint mode, slot, timeout, and max bundle upload size
 - OpenAI-compatible base URL and status URL
+- gateway transport capabilities required before this profile's controls are enabled
 - optional browser origin allowed to call gateway upload/download endpoints
 - request-auth and bundle-signing secret references
 - bundle import policy for server-side upload/import rejection
@@ -110,7 +111,7 @@ After Model Plane launches the gateway, it should check the running process agai
 py -3 .\scripts\capsule_cli.py gateway check .\examples\model-plane\gateway-launch-profile.example.json --json
 ```
 
-That check calls the profile's `transport.status_url`, authenticates from `security.request_auth`, and verifies that the status response matches the profile and includes the required `transport` object before upload/download controls are enabled.
+That check calls the profile's `transport.status_url`, authenticates from `security.request_auth`, and verifies that the status response matches the profile and includes the required `transport` object before upload/download controls are enabled. If `transport.required_capabilities` is present, every listed capability must be advertised as true by the running gateway.
 
 The same check reports `endpoint_verified` and `endpoint_compatibility`. If the profile requests `checkpoint_mode=hard`, the check requires the running gateway status to report `hard_checkpoint_ready=true`, which depends on a successful endpoint slot probe.
 
@@ -126,6 +127,26 @@ POST   /api/capsules/import
 ```
 
 Model Plane should read `/api/capsules/status` first and use its `transport`, `identity`, and `endpoint_compatibility` objects as the runtime contract. It advertises the API version, max raw upload bytes, `.scap` content type, endpoint paths, auth requirement, signing policy, import policy, upload/download capabilities, thread identity headers, and hard checkpoint readiness for the specific gateway instance that was launched.
+
+For upload/download controls, the launch profile should list at least:
+
+```json
+{
+  "transport": {
+    "required_capabilities": [
+      "export",
+      "list",
+      "download",
+      "raw_upload_import",
+      "stored_bundle_import",
+      "delete",
+      "thread_id_override",
+      "digest_verification",
+      "bundle_policy_gate"
+    ]
+  }
+}
+```
 
 If Model Plane's upload/download controls run in a browser, the launch profile should set `gateway.cors_allow_origin` to that UI's exact origin. The status response then advertises `transport.cors`; Model Plane should require it before enabling direct browser `.scap` transfer controls.
 

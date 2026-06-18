@@ -18,6 +18,20 @@ ROOT = Path(__file__).resolve().parents[1]
 SCHEMAS = ROOT / "schemas"
 EXAMPLES = ROOT / "examples"
 
+TRANSPORT_CAPABILITY_NAMES = {
+    "export",
+    "list",
+    "download",
+    "raw_upload_import",
+    "stored_bundle_import",
+    "delete",
+    "thread_id_override",
+    "digest_verification",
+    "hmac_sha256_signing",
+    "require_signature_on_import",
+    "bundle_policy_gate",
+}
+
 
 class ValidationError(Exception):
     """Raised when an example violates a project invariant."""
@@ -459,6 +473,15 @@ def validate_gateway_launch_profile(path: Path) -> None:
     if not str(transport["status_url"]).endswith("/api/capsules/status"):
         raise ValidationError(f"{name}.transport.status_url should point at /api/capsules/status")
     require_bool(f"{name}.transport.require_status_transport", transport["require_status_transport"])
+    if "required_capabilities" in transport:
+        capabilities = transport["required_capabilities"]
+        if not isinstance(capabilities, list) or not all(isinstance(item, str) for item in capabilities):
+            raise ValidationError(f"{name}.transport.required_capabilities must be a string array")
+        if len(capabilities) != len(set(capabilities)):
+            raise ValidationError(f"{name}.transport.required_capabilities must not contain duplicates")
+        unknown = sorted(set(capabilities) - TRANSPORT_CAPABILITY_NAMES)
+        if unknown:
+            raise ValidationError(f"{name}.transport.required_capabilities contains unsupported values: {', '.join(unknown)}")
 
     security = data["security"]
     if not isinstance(security, dict):

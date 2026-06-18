@@ -570,6 +570,7 @@ Initial status:
 - `capsule_cli.py gateway command PROFILE --json` renders a launch profile into concrete `capsule_gateway.py` arguments plus the OpenAI base URL and status URL.
 - `capsule_cli.py gateway check PROFILE --json` calls the profile status URL, authenticates from the profile's request-auth reference, and verifies the live gateway status/transport contract.
 - `gateway check` reports `endpoint_verified` and gates hard checkpoint profiles on `endpoint_compatibility.hard_checkpoint_ready`.
+- `transport.required_capabilities` lets a profile name the gateway capabilities that must be live before Model Plane enables profile-dependent controls.
 - `security.bundle_import_policy` maps to gateway-side `--bundle-policy-*` import rejection flags and is verified against `transport.import_policy`.
 - `gateway.cors_allow_origin` maps to `--cors-allow-origin` and is checked against `transport.cors` when present.
 - `capsule_cli.py endpoint matrix --json` gives Model Plane a cache view of endpoint slot compatibility before it exposes hard capsule controls.

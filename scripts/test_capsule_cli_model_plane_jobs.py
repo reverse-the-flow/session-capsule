@@ -98,6 +98,8 @@ def main() -> None:
             raise AssertionError("gateway launch profile did not render CORS origin")
         if launch_payload["status_url"] != "http://127.0.0.1:8765/api/capsules/status":
             raise AssertionError("gateway launch profile did not expose expected status URL")
+        if "download" not in launch_payload.get("required_capabilities", []):
+            raise AssertionError("gateway launch profile did not expose required transfer capabilities")
 
         bad_profile = jobs / "bad-gateway-launch-profile.json"
         bad_data = json.loads(launch_profile.read_text(encoding="utf-8"))
@@ -240,6 +242,14 @@ def main() -> None:
                             "openai_base_url": f"{gateway_url}/v1",
                             "status_url": f"{gateway_url}/api/capsules/status",
                             "require_status_transport": True,
+                            "required_capabilities": [
+                                "download",
+                                "raw_upload_import",
+                                "stored_bundle_import",
+                                "thread_id_override",
+                                "digest_verification",
+                                "bundle_policy_gate",
+                            ],
                         },
                         "security": {
                             "request_auth": {"source": "file", "ref": str(gateway_token)},
@@ -266,6 +276,19 @@ def main() -> None:
                 raise AssertionError("gateway profile status check did not report expected endpoint")
             if profile_status_payload.get("endpoint_compatibility", {}).get("slot_probe", {}).get("status") != "slot_probe_missing":
                 raise AssertionError("gateway profile status check did not expose missing slot probe status for soft endpoint")
+            required_capabilities = profile_status_payload.get("required_capabilities", [])
+            if "raw_upload_import" not in required_capabilities or "digest_verification" not in required_capabilities:
+                raise AssertionError("gateway profile status check did not report required transfer capabilities")
+            if "download" not in profile_status_payload.get("transport_capabilities", []):
+                raise AssertionError("gateway profile status check did not report advertised gateway capabilities")
+
+            bad_capability_profile = jobs / "bad-required-capability-profile.json"
+            bad_capability_data = json.loads(status_profile.read_text(encoding="utf-8"))
+            bad_capability_data["transport"]["required_capabilities"] = ["hmac_sha256_signing"]
+            bad_capability_profile.write_text(json.dumps(bad_capability_data, indent=2) + "\n", encoding="utf-8")
+            bad_capability_failure = run_cli_failure(state, "gateway", "check", str(bad_capability_profile), "--json")
+            if "transport.capability.hmac_sha256_signing" not in bad_capability_failure.stderr:
+                raise AssertionError("gateway profile status check did not reject missing required capability")
 
             gateway_export_job = jobs / "gateway-export.json"
             write_job(

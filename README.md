@@ -279,7 +279,7 @@ POST   /api/capsules/import
 DELETE /api/capsules/bundles/{bundle_id}
 ```
 
-Model Plane should read `/api/capsules/status` first and use the response's `transport` object to discover endpoint paths, upload size, content type, auth policy, signing policy, CORS policy, and enabled bundle capabilities.
+Model Plane should read `/api/capsules/status` first and use the response's `transport` object to discover endpoint paths, upload size, content type, auth policy, signing policy, CORS policy, and enabled bundle capabilities. Launch profiles can list `transport.required_capabilities`; `gateway check` verifies each required capability before Model Plane enables profile-dependent upload/download controls.
 
 Bundles are stored under `.capsules/bundles/`. Export defaults to ledger-only; hard snapshots require `include_snapshots=true`.
 Imports can target a new local thread id with `thread_id` in JSON control calls or `X-Capsule-Import-Thread` on raw `.scap` uploads.

@@ -142,7 +142,7 @@ The same response includes an `identity` object for thread continuity:
 }
 ```
 
-These are runtime contracts for launchers and local UIs. The docs describe the same API, but the status payload tells Model Plane what this gateway instance actually started with.
+These are runtime contracts for launchers and local UIs. The docs describe the same API, but the status payload tells Model Plane what this gateway instance actually started with. A Model Plane launch profile can list `transport.required_capabilities`; `gateway check` verifies those names against `transport.capabilities` before upload/download controls are enabled.
 
 ## Browser Access
 

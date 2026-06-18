@@ -118,6 +118,27 @@
         },
         "require_status_transport": {
           "type": "boolean"
+        },
+        "required_capabilities": {
+          "type": "array",
+          "description": "Gateway transport capabilities Model Plane must see in /api/capsules/status before enabling profile-dependent controls.",
+          "items": {
+            "type": "string",
+            "enum": [
+              "export",
+              "list",
+              "download",
+              "raw_upload_import",
+              "stored_bundle_import",
+              "delete",
+              "thread_id_override",
+              "digest_verification",
+              "hmac_sha256_signing",
+              "require_signature_on_import",
+              "bundle_policy_gate"
+            ]
+          },
+          "uniqueItems": true
         }
       }
     },

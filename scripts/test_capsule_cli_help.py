@@ -119,6 +119,8 @@ def main() -> None:
         raise AssertionError("transport help did not include gateway bundle API")
     if "gateway download" not in transport or "gateway upload" not in transport:
         raise AssertionError("transport help did not include direct gateway upload/download commands")
+    if "transport.required_capabilities" not in transport:
+        raise AssertionError("transport help did not include launch-profile required capability checks")
 
     model_plane = run_cli("help", "model-plane")
     if "gateway_export_bundle" not in model_plane:
@@ -135,6 +137,8 @@ def main() -> None:
         raise AssertionError("model-plane help did not include gateway launch-profile status checking")
     if "endpoint_verified" not in model_plane:
         raise AssertionError("model-plane help did not include endpoint readiness status")
+    if "required_capabilities" not in model_plane:
+        raise AssertionError("model-plane help did not include required capability status")
     if "gateway status" not in model_plane or "gateway upload" not in model_plane:
         raise AssertionError("model-plane help did not include direct gateway transport commands")
 

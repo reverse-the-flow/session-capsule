@@ -23,7 +23,7 @@ It performs:
 - `.scap` import thread-id override and ref remapping smoke test
 - `.scap` redacted export/import smoke test for metadata-only transcript sharing
 - storage config, pinning, stats, and GC smoke test
-- Model Plane job-packet smoke test, including launch-profile rendering/checking, shutdown planning, signed export jobs, and authenticated gateway transport job packets
+- Model Plane job-packet smoke test, including launch-profile rendering/checking, required transport capability gating, shutdown planning, signed export jobs, and authenticated gateway transport job packets
 - local gateway fake-backend smoke test
 - gateway auth plus signed bundle export/list/download/upload/delete smoke path
 - gateway status discovery for transport API version, upload size, content type, auth policy, signing policy, endpoint paths, and bundle capabilities
@@ -59,6 +59,7 @@ The gateway integration contract is verified by fake-backend tests that exercise
 - hard restore plus diff forwarding
 - checkpoint after response
 - transport status discovery for Model Plane upload/download integration
+- launch-profile required capability verification before enabling Model Plane upload/download controls
 - endpoint compatibility status discovery for Model Plane hard checkpoint gating
 - gateway CORS preflight and exposed download headers for browser-hosted upload/download controls
 - identity status discovery for Open WebUI and opencode thread metadata
@@ -67,7 +68,7 @@ The gateway integration contract is verified by fake-backend tests that exercise
 - gateway redacted bundle export
 - gateway raw-upload and stored-bundle import target-thread override
 - authenticated gateway requests and transport job packets when a token is configured
-- Model Plane gateway launch-profile command rendering, authenticated status checking, endpoint readiness reporting, and inline secret-value rejection
+- Model Plane gateway launch-profile command rendering, authenticated status checking, required capability rejection, endpoint readiness reporting, and inline secret-value rejection
 
 Live client verification remains an operator step:
 

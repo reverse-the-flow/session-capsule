@@ -225,7 +225,7 @@ POST   /api/capsules/import
 DELETE /api/capsules/bundles/{bundle_id}
 ```
 
-Model Plane should read `/api/capsules/status` first. The response includes a versioned `transport` object with endpoint paths, `max_upload_bytes`, content type, auth policy, signing policy, and advertised upload/download capabilities.
+Model Plane should read `/api/capsules/status` first. The response includes a versioned `transport` object with endpoint paths, `max_upload_bytes`, content type, auth policy, signing policy, and advertised upload/download capabilities. Launch profiles can list `transport.required_capabilities`; `gateway check` verifies every listed capability before Model Plane enables profile-dependent controls.
 
 Browser-hosted Model Plane UIs should launch the gateway with `--cors-allow-origin` set to the exact UI origin and require `transport.cors.enabled` before enabling direct browser upload/download controls.
 
@@ -357,7 +357,7 @@ Gateway launch profile artifacts:
 - `schemas/model-plane-gateway-launch.schema.json`
 - `examples/model-plane/gateway-launch-profile.example.json`
 
-The launch profile stores gateway wiring and secret references only. It does not store gateway tokens or signing key values.
+The launch profile stores gateway wiring, required gateway transport capabilities, and secret references only. It does not store gateway tokens or signing key values.
 
 Render a gateway launch command:
 
@@ -373,6 +373,8 @@ For `gateway check`, relative file secret references are resolved from the profi
 - `transport_verified`
 - `endpoint_verified`
 - `endpoint_compatibility`
+- `required_capabilities`
+- `transport_capabilities`
 
 Hard checkpoint profiles require a `slot_probe_ok` endpoint before `endpoint_verified` can pass.
 

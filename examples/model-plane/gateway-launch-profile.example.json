@@ -23,7 +23,18 @@
   "transport": {
     "openai_base_url": "http://127.0.0.1:8765/v1",
     "status_url": "http://127.0.0.1:8765/api/capsules/status",
-    "require_status_transport": true
+    "require_status_transport": true,
+    "required_capabilities": [
+      "export",
+      "list",
+      "download",
+      "raw_upload_import",
+      "stored_bundle_import",
+      "delete",
+      "thread_id_override",
+      "digest_verification",
+      "bundle_policy_gate"
+    ]
   },
   "security": {
     "request_auth": {
@@ -48,6 +59,7 @@
     "This is a Model Plane launch profile, not a job packet.",
     "The profile carries secret references only. It must not contain the gateway token or signing key value.",
     "Set gateway.cors_allow_origin to the exact browser origin of the Model Plane UI, or null for non-browser/CLI-only use.",
+    "transport.required_capabilities lists the gateway status capabilities Model Plane must see before enabling upload/download controls.",
     "After launch, Model Plane should read transport.status_url and require the response transport object before enabling upload/download controls."
   ]
 }

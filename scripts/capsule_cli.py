@@ -288,7 +288,7 @@ Endpoints:
   POST   /api/capsules/import
   DELETE /api/capsules/bundles/{bundle_id}
 
-Model Plane should read /api/capsules/status first. The response includes a versioned transport object with endpoint paths, max_upload_bytes, content type, auth policy, signing policy, and advertised upload/download capabilities.
+Model Plane should read /api/capsules/status first. The response includes a versioned transport object with endpoint paths, max_upload_bytes, content type, auth policy, signing policy, and advertised upload/download capabilities. Launch profiles can list transport.required_capabilities; gateway check verifies every listed capability before Model Plane enables profile-dependent controls.
 Browser-hosted Model Plane UIs should launch the gateway with --cors-allow-origin set to the exact UI origin, then require transport.cors.enabled before enabling direct browser upload/download controls.
 
 Bundles are stored under:
@@ -456,7 +456,7 @@ Check a launched gateway:
 Gateway health endpoint for launch profiles:
   /api/capsules/status
 
-Gateway check reports endpoint_verified and endpoint_compatibility. Hard checkpoint profiles require a slot_probe_ok endpoint.
+Gateway check reports transport_verified, endpoint_verified, endpoint_compatibility, required_capabilities, and transport_capabilities. Hard checkpoint profiles require a slot_probe_ok endpoint.
 
 Gateway import jobs may use params.thread_id as the target local thread id for the imported bundle.
 
@@ -3468,6 +3468,50 @@ def require_profile_section(profile: JSONDict, key: str) -> JSONDict:
     return section
 
 
+TRANSPORT_CAPABILITY_NAMES = {
+    "export",
+    "list",
+    "download",
+    "raw_upload_import",
+    "stored_bundle_import",
+    "delete",
+    "thread_id_override",
+    "digest_verification",
+    "hmac_sha256_signing",
+    "require_signature_on_import",
+    "bundle_policy_gate",
+}
+
+DEFAULT_MODEL_PLANE_REQUIRED_CAPABILITIES = [
+    "export",
+    "list",
+    "download",
+    "raw_upload_import",
+    "stored_bundle_import",
+    "delete",
+    "thread_id_override",
+    "bundle_policy_gate",
+]
+
+
+def profile_required_transport_capabilities(transport: JSONDict) -> list[str]:
+    raw = transport.get("required_capabilities", DEFAULT_MODEL_PLANE_REQUIRED_CAPABILITIES)
+    if raw is None:
+        return []
+    if not isinstance(raw, list) or not all(isinstance(item, str) for item in raw):
+        raise RuntimeError("Gateway launch profile transport.required_capabilities must be a string array")
+    unknown = sorted(set(raw) - TRANSPORT_CAPABILITY_NAMES)
+    if unknown:
+        allowed = ", ".join(sorted(TRANSPORT_CAPABILITY_NAMES))
+        raise RuntimeError(
+            "Gateway launch profile transport.required_capabilities contains unsupported values: "
+            f"{', '.join(unknown)}. Allowed: {allowed}"
+        )
+    if len(raw) != len(set(raw)):
+        raise RuntimeError("Gateway launch profile transport.required_capabilities must not contain duplicates")
+    return raw
+
+
 def secret_ref_args(name: str, secret_ref: JSONDict, file_flag: str, env_flag: str) -> list[str]:
     source = secret_ref.get("source")
     ref = secret_ref.get("ref")
@@ -3599,6 +3643,7 @@ def render_gateway_command(args: argparse.Namespace) -> int:
     profile = read_json(profile_path)
     launch = gateway_launch_args(profile)
     transport = require_profile_section(profile, "transport")
+    required_capabilities = profile_required_transport_capabilities(transport)
     output = {
         "profile_id": profile.get("profile_id"),
         "profile": str(profile_path),
@@ -3607,6 +3652,7 @@ def render_gateway_command(args: argparse.Namespace) -> int:
         "openai_base_url": transport.get("openai_base_url"),
         "status_url": transport.get("status_url"),
         "require_status_transport": bool(transport.get("require_status_transport", False)),
+        "required_capabilities": required_capabilities,
     }
     if args.json:
         print(json.dumps(output, indent=2) + "\n", end="")
@@ -3615,6 +3661,7 @@ def render_gateway_command(args: argparse.Namespace) -> int:
     print(f"openai_base_url: {output['openai_base_url']}")
     print(f"status_url: {output['status_url']}")
     print(f"require_status_transport: {str(output['require_status_transport']).lower()}")
+    print(f"required_capabilities: {', '.join(required_capabilities) if required_capabilities else 'none'}")
     print("command:")
     print(output["command_line"])
     return 0
@@ -3676,6 +3723,7 @@ def verify_gateway_status_contract(profile: JSONDict, status: JSONDict) -> JSOND
     expected_upload_bytes = parse_bytes(str(gateway["max_bundle_bytes"]))
     expected_cors_origin = gateway.get("cors_allow_origin")
     expected_import_policy = profile_bundle_import_policy(security, bundle_signing)
+    required_capabilities = profile_required_transport_capabilities(transport)
 
     mismatches: list[str] = []
     checks = {
@@ -3690,6 +3738,7 @@ def verify_gateway_status_contract(profile: JSONDict, status: JSONDict) -> JSOND
 
     transport_status = status.get("transport")
     transport_verified = True
+    transport_capabilities: dict[str, Any] = {}
     if transport.get("require_status_transport", False):
         if not isinstance(transport_status, dict):
             raise RuntimeError("Gateway status response did not include required transport object")
@@ -3720,17 +3769,10 @@ def verify_gateway_status_contract(profile: JSONDict, status: JSONDict) -> JSOND
             "require_digest_index",
         ]:
             transport_checks[f"transport.import_policy.{key}"] = import_policy_status.get(key) == expected_import_policy[key]
-        capabilities = transport_status.get("capabilities", {})
-        for capability in [
-            "export",
-            "list",
-            "download",
-            "raw_upload_import",
-            "stored_bundle_import",
-            "delete",
-            "thread_id_override",
-            "bundle_policy_gate",
-        ]:
+        raw_capabilities = transport_status.get("capabilities", {})
+        capabilities = raw_capabilities if isinstance(raw_capabilities, dict) else {}
+        transport_capabilities = capabilities
+        for capability in required_capabilities:
             transport_checks[f"transport.capability.{capability}"] = capabilities.get(capability) is True
         for name, passed in transport_checks.items():
             if not passed:
@@ -3759,6 +3801,8 @@ def verify_gateway_status_contract(profile: JSONDict, status: JSONDict) -> JSOND
         "transport_verified": transport_verified,
         "endpoint_verified": endpoint_verified,
         "endpoint_compatibility": endpoint_compatibility,
+        "required_capabilities": required_capabilities,
+        "transport_capabilities": sorted(key for key, value in transport_capabilities.items() if value is True),
         "threads": status.get("threads"),
         "bundles": status.get("bundles"),
         "bundle_import_policy": transport_status.get("import_policy") if isinstance(transport_status, dict) else None,
