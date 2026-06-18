@@ -58,7 +58,7 @@
   },
   "storage": {
     "mode": "local_file",
-    "snapshot_ref": ".capsules/threads/thread_research_loop_small/snapshots/cap_004.bin",
+    "snapshot_ref": "threads/thread_research_loop_small/snapshots/cap_004.bin",
     "runtime_snapshot_ref": "/capsules/thread_research_loop_small/cap_004.bin",
     "snapshot_bytes": 1342145488,
     "snapshot_digest": "sha256-snapshot-example"

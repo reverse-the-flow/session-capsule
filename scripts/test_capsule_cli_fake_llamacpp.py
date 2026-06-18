@@ -218,6 +218,9 @@ def main() -> None:
                 raise AssertionError("thread message did not start after prefill token range")
             if manifest["storage"]["mode"] != "local_file":
                 raise AssertionError("hard checkpoint did not use local_file storage")
+            snapshot_ref = manifest["storage"].get("snapshot_ref")
+            if not snapshot_ref or Path(snapshot_ref).is_absolute() or str(snapshot_ref).replace("\\", "/").startswith(".capsules/"):
+                raise AssertionError(f"hard checkpoint did not use a store-relative snapshot_ref: {snapshot_ref}")
             if manifest["context"]["segments"][0]["source"] != "prefill":
                 raise AssertionError("hard checkpoint did not preserve parent prefill segment")
             if manifest["storage"]["snapshot_bytes"] != len(b"fake-slot-state"):

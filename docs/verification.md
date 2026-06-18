@@ -16,6 +16,7 @@ It performs:
 - Model Plane gateway launch-profile schema/example validation
 - conceptual CLI help smoke test
 - fake `llama.cpp` hard capsule save/restore, shutdown job, and failed-restore fallback smoke test
+- store-relative hard snapshot reference smoke test
 - `.scap` export/import/verify, dry-run sizing, endpoint compatibility warning, signature, and tamper-rejection smoke test
 - storage config, pinning, stats, and GC smoke test
 - Model Plane job-packet smoke test, including launch-profile rendering/checking, shutdown planning, signed export jobs, and authenticated gateway transport job packets
@@ -49,6 +50,7 @@ The gateway integration contract is verified by fake-backend tests that exercise
 - hard restore plus diff forwarding
 - checkpoint after response
 - transport status discovery for Model Plane upload/download integration
+- store-relative snapshot refs in hard checkpoint manifests
 - `.scap` export, list, download, raw upload import, and bundle delete
 - authenticated gateway requests and transport job packets when a token is configured
 - Model Plane gateway launch-profile command rendering, authenticated status checking, and inline secret-value rejection

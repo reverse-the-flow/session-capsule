@@ -194,6 +194,18 @@ They include:
 - context limit
 - slot API fields
 
+## Snapshot References
+
+Hard local snapshot manifests use two different references:
+
+| Field | Meaning |
+| --- | --- |
+| `storage.snapshot_ref` | Capsule-state-relative file path such as `threads/THREAD/snapshots/CAPSULE.bin`. |
+| `storage.runtime_snapshot_ref` | Runtime-visible slot save/restore filename, which may be absolute or server-specific. |
+| `storage.snapshot_digest` | Content digest metadata for verification and indexing. |
+
+For v0, hard snapshot files are stored under the capsule state directory and referenced by store-relative path. They are not addressed by digest path yet. The digest is metadata, and missing snapshots still fall back to transcript replay.
+
 ## Help Surface
 
 There is enough configuration surface for a real help view now:

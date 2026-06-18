@@ -72,7 +72,7 @@ Core objects:
   "runtime": "llama.cpp-build-id",
   "context_start": 0,
   "context_end": 12480,
-  "snapshot_ref": "capsules/cap_004.bin",
+  "snapshot_ref": "threads/thread_abc/snapshots/cap_004.bin",
   "token_digest": "sha256-..."
 }
 ```
@@ -387,6 +387,7 @@ Recommended order:
 12. Stage 11: bundle integrity, signing, and sealing
 13. Stage 12: gateway access control
 14. Stage 13: Model Plane gateway launch profile
+15. Stage 14: snapshot reference policy
 
 Do not start with gateway or Model Plane. They become simpler after the ledger, manifest, and CLI lifecycle are real.
 
@@ -547,6 +548,32 @@ Initial status:
 - `scripts/test_capsule_cli_model_plane_jobs.py` verifies launch-profile command rendering, authenticated status checking, and inline secret-value rejection.
 - `docs/model-plane.md` and `docs/configuration.md` explain how Model Plane maps the profile to gateway launch flags and status discovery.
 
+## Stage 14: Snapshot Reference Policy
+
+Goal: Make local hard snapshot references portable inside a capsule state directory while preserving the runtime-visible filename needed by slot APIs.
+
+Implementation steps:
+
+- Use store-relative `storage.snapshot_ref` for local hard snapshot files.
+- Keep `.capsules/` out of manifest snapshot refs.
+- Keep runtime-visible filenames in `storage.runtime_snapshot_ref`.
+- Keep `storage.snapshot_digest` as metadata instead of making v0 paths content-addressed.
+- Validate examples and smoke-test hard checkpoint manifests for the policy.
+
+Exit criteria:
+
+- Newly written hard checkpoint manifests use store-relative snapshot refs.
+- Examples reject absolute or `.capsules/`-prefixed `snapshot_ref` values.
+- The docs clearly distinguish storage paths, runtime paths, and content digests.
+
+Initial status:
+
+- `Store.relative_ref()` writes snapshot refs relative to the capsule state directory.
+- `examples/capsule-manifest.example.json` uses `threads/THREAD/snapshots/CAPSULE.bin`.
+- `scripts/validate_schema_examples.py` rejects absolute, escaping, or `.capsules/`-prefixed example snapshot refs.
+- `scripts/test_capsule_cli_fake_llamacpp.py` verifies hard checkpoint manifests use store-relative snapshot refs.
+- `docs/protocol.md` and `docs/configuration.md` document the v0 policy.
+
 ## First Three Implementation Tickets
 
 ### Ticket 1: Schema Pack
@@ -606,7 +633,6 @@ Initial status:
 
 - Should local state live in `.capsules/` inside each project, or in a user-level data directory with project references?
 - Which `llama.cpp` server builds expose the most stable slot API fields?
-- Should v0 snapshots be stored by absolute path, repo-relative path, or content-addressed digest?
 - What is the smallest thread id metadata Open WebUI and opencode can pass without custom plugins?
 - Which opencode hook should fill per-session capsule headers automatically instead of relying on launch-time environment variables?
 - Should `.scap` include raw snapshots by default, or require an explicit `--include-snapshots` flag?

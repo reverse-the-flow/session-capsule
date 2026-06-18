@@ -168,17 +168,20 @@
           ]
         },
         "snapshot_ref": {
-          "type": ["string", "null"]
+          "type": ["string", "null"],
+          "description": "Path relative to the capsule state directory, for example threads/THREAD/snapshots/CAPSULE.bin. Do not include the .capsules prefix."
         },
         "runtime_snapshot_ref": {
-          "type": ["string", "null"]
+          "type": ["string", "null"],
+          "description": "Runtime-visible slot save/restore filename. This may be absolute or server-specific."
         },
         "snapshot_bytes": {
           "type": ["integer", "null"],
           "minimum": 0
         },
         "snapshot_digest": {
-          "type": ["string", "null"]
+          "type": ["string", "null"],
+          "description": "Content digest metadata. V0 snapshot file paths are not content-addressed."
         }
       }
     },

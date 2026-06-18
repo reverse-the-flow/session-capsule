@@ -163,6 +163,21 @@ def validate_capsule(data: dict[str, Any], endpoint: dict[str, Any]) -> None:
     if previous_end != context["token_end"]:
         raise ValidationError("capsule segments must end at context.token_end")
 
+    storage = data.get("storage", {})
+    if not isinstance(storage, dict):
+        raise ValidationError("capsule.storage must be an object")
+    snapshot_ref = storage.get("snapshot_ref")
+    if snapshot_ref is not None:
+        if not isinstance(snapshot_ref, str) or not snapshot_ref:
+            raise ValidationError("capsule.storage.snapshot_ref must be a non-empty string or null")
+        normalized = snapshot_ref.replace("\\", "/")
+        if normalized.startswith("/") or re.match(r"^[A-Za-z]:/", normalized):
+            raise ValidationError("capsule.storage.snapshot_ref must be relative to the capsule state directory")
+        if normalized.startswith(".capsules/"):
+            raise ValidationError("capsule.storage.snapshot_ref must not include the .capsules state directory prefix")
+        if normalized.startswith("../") or "/../" in normalized:
+            raise ValidationError("capsule.storage.snapshot_ref must not escape the capsule state directory")
+
 
 def validate_thread(data: dict[str, Any], capsule: dict[str, Any], endpoint: dict[str, Any]) -> None:
     require_keys(

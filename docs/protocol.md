@@ -60,6 +60,20 @@ The capsule manifest describes one checkpoint. It tracks:
 
 The manifest answers: can this endpoint restore this checkpoint?
 
+### Snapshot References
+
+For v0 local hard capsules, `storage.snapshot_ref` is relative to the capsule state directory:
+
+```text
+threads/THREAD/snapshots/CAPSULE.bin
+```
+
+It must not be absolute and must not include the `.capsules/` prefix. This keeps manifests portable when a project state directory moves or is imported from a `.scap` bundle.
+
+`storage.runtime_snapshot_ref` is separate. It may be an absolute or server-visible path because some runtimes need the exact filename passed to their slot save/restore API.
+
+`storage.snapshot_digest` records content identity and integrity metadata, but v0 does not use content-addressed paths for hard snapshot files. Transcript replay remains the fallback if the local snapshot is missing.
+
 ### Bundle Integrity
 
 A `.scap` bundle has its own top-level `manifest.json`. New exports include:
