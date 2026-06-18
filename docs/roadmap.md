@@ -389,6 +389,7 @@ Recommended order:
 14. Stage 13: Model Plane gateway launch profile
 15. Stage 14: snapshot reference policy
 16. Stage 15: state location policy
+17. Stage 16: gateway identity contract
 
 Do not start with gateway or Model Plane. They become simpler after the ledger, manifest, and CLI lifecycle are real.
 
@@ -600,6 +601,33 @@ Initial status:
 - `docs/configuration.md` and `docs/help.md` state that `.capsules/` is the v0 default and user-level/global state is future work.
 - `scripts/test_capsule_cli_help.py` covers the state help topic and `state info` output.
 
+## Stage 16: Gateway Identity Contract
+
+Goal: Make thread identity metadata discoverable so Open WebUI, opencode, Model Plane, and local UIs can bind requests to stable capsule threads without client-specific guessing.
+
+Implementation steps:
+
+- Publish preferred identity headers from `/api/capsules/status`.
+- Publish accepted client-native thread and workspace headers.
+- Define the minimum useful metadata for generic OpenAI-compatible clients, Open WebUI, and opencode.
+- Keep generated thread ids as best-effort fallback only.
+- Test identity discovery through the fake gateway smoke path.
+
+Exit criteria:
+
+- A client can discover which header gives durable thread continuity.
+- The docs answer the smallest useful thread id metadata for Open WebUI and opencode.
+- The gateway status payload and integration docs agree.
+
+Initial status:
+
+- `/api/capsules/status` includes an `identity` object with preferred headers, accepted headers, client mappings, fallback behavior, default thread prefix, and default prefill.
+- Generic clients need `X-Capsule-Thread`.
+- Open WebUI needs `X-OpenWebUI-Chat-Id`; `X-OpenWebUI-User-Id` is optional workspace metadata.
+- opencode needs `X-Opencode-Thread` or `X-Opencode-Session`; `X-Opencode-Workspace` is optional workspace metadata.
+- `scripts/test_capsule_gateway_fake_backend.py` verifies identity contract discovery.
+- `docs/integrations.md`, `docs/protocol.md`, and `docs/transport.md` document the contract.
+
 ## First Three Implementation Tickets
 
 ### Ticket 1: Schema Pack
@@ -658,6 +686,5 @@ Initial status:
 ## Open Questions
 
 - Which `llama.cpp` server builds expose the most stable slot API fields?
-- What is the smallest thread id metadata Open WebUI and opencode can pass without custom plugins?
 - Which opencode hook should fill per-session capsule headers automatically instead of relying on launch-time environment variables?
 - Should `.scap` include raw snapshots by default, or require an explicit `--include-snapshots` flag?

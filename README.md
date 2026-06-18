@@ -235,6 +235,12 @@ Point an OpenAI-compatible client at `http://127.0.0.1:8765/v1`. The v0 gateway 
 - `X-Capsule-Workspace`: workspace/project id for ledger metadata
 - `X-Capsule-Prefill`: named prefill capsule to attach when a thread is first created
 
+The status endpoint advertises the full identity contract, including native Open WebUI and opencode headers:
+
+```text
+GET /api/capsules/status -> identity
+```
+
 The gateway also exposes local `.scap` bundle transport:
 
 ```text

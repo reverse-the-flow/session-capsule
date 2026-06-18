@@ -235,6 +235,14 @@ Optional headers:
   X-Capsule-Workspace
   X-Capsule-Prefill
 
+Client-native thread headers recognized:
+  X-OpenWebUI-Chat-Id
+  X-Opencode-Thread
+  X-Opencode-Session
+
+Discover the full identity contract:
+  GET /api/capsules/status
+
 For gateway upload/download endpoints:
   capsule help transport""",
     "transport": """Gateway transport lets a local UI or Model Plane move .scap bundles without reimplementing export/import.

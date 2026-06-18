@@ -82,7 +82,31 @@ The response includes a versioned `transport` object:
 }
 ```
 
-This is the runtime contract for launchers and local UIs. The docs describe the same API, but the status payload tells Model Plane what this gateway instance actually started with.
+The same response includes an `identity` object for thread continuity:
+
+```json
+{
+  "identity": {
+    "preferred_headers": {
+      "thread": "X-Capsule-Thread",
+      "workspace": "X-Capsule-Workspace",
+      "prefill": "X-Capsule-Prefill"
+    },
+    "client_mappings": {
+      "open_webui": {
+        "minimum_thread_header": "X-OpenWebUI-Chat-Id",
+        "optional_workspace_header": "X-OpenWebUI-User-Id"
+      },
+      "opencode": {
+        "minimum_thread_headers": ["X-Opencode-Thread", "X-Opencode-Session"],
+        "optional_workspace_header": "X-Opencode-Workspace"
+      }
+    }
+  }
+}
+```
+
+These are runtime contracts for launchers and local UIs. The docs describe the same API, but the status payload tells Model Plane what this gateway instance actually started with.
 
 ## Export
 

@@ -324,6 +324,41 @@ def transport_contract(config: GatewayConfig) -> JSONDict:
     }
 
 
+def identity_contract(config: GatewayConfig) -> JSONDict:
+    return {
+        "api_version": "0.1",
+        "preferred_headers": {
+            "thread": "X-Capsule-Thread",
+            "workspace": "X-Capsule-Workspace",
+            "prefill": "X-Capsule-Prefill",
+        },
+        "accepted_thread_headers": THREAD_HEADER_CANDIDATES,
+        "accepted_workspace_headers": WORKSPACE_HEADER_CANDIDATES,
+        "accepted_prefill_header": "X-Capsule-Prefill",
+        "client_mappings": {
+            "open_webui": {
+                "minimum_thread_header": "X-OpenWebUI-Chat-Id",
+                "optional_workspace_header": "X-OpenWebUI-User-Id",
+            },
+            "opencode": {
+                "minimum_thread_headers": ["X-Opencode-Thread", "X-Opencode-Session"],
+                "optional_workspace_header": "X-Opencode-Workspace",
+            },
+            "generic_openai": {
+                "minimum_thread_header": "X-Capsule-Thread",
+                "optional_workspace_header": "X-Capsule-Workspace",
+            },
+        },
+        "fallback": {
+            "generated_thread_id": True,
+            "source": "model and first request message",
+            "continuity": "best_effort",
+        },
+        "default_thread_prefix": config.default_thread_prefix,
+        "default_prefill": config.default_prefill,
+    }
+
+
 def export_bundle_api(config: GatewayConfig, payload: JSONDict) -> JSONDict:
     thread_id = cc.slugify(str(payload["thread_id"]))
     bundle_id = safe_bundle_id(str(payload.get("bundle_id") or new_bundle_id(thread_id)))
@@ -707,6 +742,7 @@ def make_handler(config: GatewayConfig) -> type[BaseHTTPRequestHandler]:
                         "require_bundle_signature": config.require_bundle_signature,
                         "auth_required": config.auth_token is not None,
                         "transport": transport_contract(config),
+                        "identity": identity_contract(config),
                     },
                 )
                 return

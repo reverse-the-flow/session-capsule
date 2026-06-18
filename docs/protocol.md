@@ -179,6 +179,20 @@ Clients should target `http://127.0.0.1:8765/v1/chat/completions` and send `stre
 
 For thin client integrations, the gateway also recognizes common forwarded identity headers such as `X-OpenWebUI-Chat-Id`, `X-OpenWebUI-User-Id`, `X-Opencode-Thread`, and `X-Opencode-Session`. Explicit `X-Capsule-*` headers remain preferred because they are client-independent.
 
+The status endpoint advertises the identity contract:
+
+```text
+GET /api/capsules/status -> identity
+```
+
+For v0, the smallest useful thread metadata is one stable thread header:
+
+- generic clients: `X-Capsule-Thread`
+- Open WebUI: `X-OpenWebUI-Chat-Id`
+- opencode: `X-Opencode-Thread` or `X-Opencode-Session`
+
+Workspace headers are optional metadata. If no stable thread header exists, generated ids are best-effort and should not be treated as durable continuity.
+
 If a hard capsule is available, the gateway restores it into the configured slot and forwards only the transcript diff after the capsule token range. If no compatible hard capsule exists, it forwards a replay prompt and checkpoints after the response.
 
 The same gateway exposes `.scap` bundle transport for local UI and Model Plane integration:

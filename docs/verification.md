@@ -24,6 +24,7 @@ It performs:
 - local gateway fake-backend smoke test
 - gateway auth plus signed bundle export/list/download/upload/delete smoke path
 - gateway status discovery for transport API version, upload size, content type, auth policy, signing policy, endpoint paths, and bundle capabilities
+- gateway status discovery for identity headers and Open WebUI/opencode metadata mappings
 
 ## Current Evidence
 
@@ -51,6 +52,7 @@ The gateway integration contract is verified by fake-backend tests that exercise
 - hard restore plus diff forwarding
 - checkpoint after response
 - transport status discovery for Model Plane upload/download integration
+- identity status discovery for Open WebUI and opencode thread metadata
 - store-relative snapshot refs in hard checkpoint manifests
 - `.scap` export, list, download, raw upload import, and bundle delete
 - authenticated gateway requests and transport job packets when a token is configured

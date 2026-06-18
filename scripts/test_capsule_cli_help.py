@@ -52,6 +52,8 @@ def main() -> None:
     gateway = run_cli("help", "gateway")
     if "http://127.0.0.1:8765/v1" not in gateway:
         raise AssertionError("gateway help did not include client base URL")
+    if "X-OpenWebUI-Chat-Id" not in gateway or "X-Opencode-Session" not in gateway:
+        raise AssertionError("gateway help did not include native client identity headers")
 
     transport = run_cli("help", "transport")
     if "/api/capsules/export" not in transport or "application/vnd.session-capsule.scap" not in transport:

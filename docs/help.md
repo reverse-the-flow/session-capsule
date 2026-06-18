@@ -166,6 +166,20 @@ http://127.0.0.1:8765/v1
 
 Gateway v0 is non-streaming. Clients should send `stream=false`.
 
+Preferred identity headers:
+
+- `X-Capsule-Thread`
+- `X-Capsule-Workspace`
+- `X-Capsule-Prefill`
+
+Client-native thread headers recognized:
+
+- `X-OpenWebUI-Chat-Id`
+- `X-Opencode-Thread`
+- `X-Opencode-Session`
+
+Discover the full identity contract from `/api/capsules/status`.
+
 ## Transport
 
 Gateway transport exposes `.scap` bundles to local UIs or Model Plane:

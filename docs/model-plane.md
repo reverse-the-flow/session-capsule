@@ -115,6 +115,8 @@ POST   /api/capsules/import
 
 Model Plane should read `/api/capsules/status` first and use its `transport` object as the runtime contract. It advertises the API version, max raw upload bytes, `.scap` content type, endpoint paths, auth requirement, signing policy, and upload/download capabilities for the specific gateway instance that was launched.
 
+The same status response includes `identity`, which advertises preferred `X-Capsule-*` headers plus recognized Open WebUI and opencode thread headers. Model Plane should use that object when deciding which UI/session id to bind to `X-Capsule-Thread`.
+
 The gateway owns local export/import mechanics. Model Plane owns auth, UX, retention, and remote exposure.
 
 If signed transport is required, Model Plane should launch the gateway with `--signature-key-file` or `--signature-key-env` and `--require-bundle-signature`. Signing keys should not be placed inside job packets.

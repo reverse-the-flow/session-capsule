@@ -245,6 +245,19 @@ def main() -> None:
             endpoints = transport.get("endpoints", {})
             if endpoints.get("download_bundle", {}).get("path_template") != "/api/capsules/bundles/{bundle_id}":
                 raise AssertionError("gateway transport status did not expose download path template")
+            identity = status.get("identity", {})
+            if identity.get("preferred_headers", {}).get("thread") != "X-Capsule-Thread":
+                raise AssertionError("gateway identity status did not expose preferred thread header")
+            if "X-OpenWebUI-Chat-Id" not in identity.get("accepted_thread_headers", []):
+                raise AssertionError("gateway identity status did not expose Open WebUI chat header")
+            if "X-Opencode-Session" not in identity.get("accepted_thread_headers", []):
+                raise AssertionError("gateway identity status did not expose opencode session header")
+            if identity.get("client_mappings", {}).get("open_webui", {}).get("minimum_thread_header") != "X-OpenWebUI-Chat-Id":
+                raise AssertionError("gateway identity status did not expose Open WebUI minimum metadata")
+            if "X-Opencode-Thread" not in identity.get("client_mappings", {}).get("opencode", {}).get("minimum_thread_headers", []):
+                raise AssertionError("gateway identity status did not expose opencode minimum metadata")
+            if identity.get("fallback", {}).get("continuity") != "best_effort":
+                raise AssertionError("gateway identity status did not describe generated id fallback")
 
             first_payload = {
                 "model": "fake-model",

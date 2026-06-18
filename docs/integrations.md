@@ -65,6 +65,16 @@ The gateway also recognizes common client-native identity headers:
 
 If no usable thread header exists, the gateway creates a conservative generated thread id from the model and first request message. That works for smoke testing but gives weaker continuity than an explicit id.
 
+The minimum useful metadata is:
+
+| Client | Required for continuity | Optional workspace metadata |
+| --- | --- | --- |
+| Generic OpenAI-compatible client | `X-Capsule-Thread` | `X-Capsule-Workspace` |
+| Open WebUI | `X-OpenWebUI-Chat-Id` | `X-OpenWebUI-User-Id` |
+| opencode | `X-Opencode-Thread` or `X-Opencode-Session` | `X-Opencode-Workspace` |
+
+The running gateway advertises the same contract from `/api/capsules/status` under `identity`.
+
 ## Open WebUI
 
 Open WebUI can be pointed at the gateway as an OpenAI-compatible API base URL.
