@@ -159,7 +159,9 @@ def main() -> None:
         with tempfile.TemporaryDirectory(prefix="session-capsules-gateway-") as temp:
             state = Path(temp) / ".capsules"
             prefill_path = Path(temp) / "prefill.md"
+            signature_key = Path(temp) / "gateway-signing.key"
             prefill_path.write_text("Stable gateway prefill.", encoding="utf-8")
+            signature_key.write_text("gateway-signing-key", encoding="utf-8")
 
             run_cli(
                 state,
@@ -194,6 +196,10 @@ def main() -> None:
                 default_prefill=None,
                 default_thread_prefix="gateway",
                 max_bundle_bytes=10 * 1000 * 1000,
+                signature_key_file=signature_key,
+                signature_key_env=None,
+                signature_key_id="gateway-test",
+                require_bundle_signature=False,
                 lock=threading.Lock(),
             )
             gateway = capsule_gateway.create_server(config)
@@ -289,6 +295,10 @@ def main() -> None:
                 raise AssertionError("gateway export did not preserve requested bundle id")
             if exported.get("includes_snapshots") is not False:
                 raise AssertionError("gateway export should default to ledger-only bundle semantics")
+            if exported.get("signature_present") is not True:
+                raise AssertionError("gateway export did not sign bundle when a signing key was configured")
+            if exported.get("signature_key_id") != "gateway-test":
+                raise AssertionError("gateway export did not include configured signature key id")
 
             bundle_list = get_json(f"{gateway_url}/api/capsules/bundles")
             if not any(item["bundle_id"] == "gateway-thread-test" for item in bundle_list["bundles"]):
@@ -332,6 +342,10 @@ def main() -> None:
                 default_prefill=None,
                 default_thread_prefix="gateway",
                 max_bundle_bytes=10 * 1000 * 1000,
+                signature_key_file=signature_key,
+                signature_key_env=None,
+                signature_key_id="gateway-test",
+                require_bundle_signature=True,
                 lock=threading.Lock(),
             )
             import_gateway = capsule_gateway.create_server(import_config)

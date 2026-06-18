@@ -19,7 +19,7 @@ It performs:
 - storage config, pinning, stats, and GC smoke test
 - Model Plane job-packet smoke test, including gateway transport job packets
 - local gateway fake-backend smoke test
-- gateway bundle export/list/download/upload/delete smoke path
+- gateway signed bundle export/list/download/upload/delete smoke path
 
 ## Current Evidence
 

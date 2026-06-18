@@ -62,6 +62,10 @@ class GatewayConfig:
     default_prefill: str | None
     default_thread_prefix: str
     max_bundle_bytes: int
+    signature_key_file: Path | None
+    signature_key_env: str | None
+    signature_key_id: str | None
+    require_bundle_signature: bool
     lock: threading.Lock
 
 
@@ -215,6 +219,13 @@ def bundle_metadata(config: GatewayConfig, path: Path) -> JSONDict:
                     "export_mode": manifest.get("export_mode"),
                     "includes_snapshots": manifest.get("includes_snapshots"),
                     "redacted_transcript": manifest.get("redacted_transcript"),
+                    "signature_present": isinstance(manifest.get("integrity", {}).get("signature"), dict),
+                    "signature_algorithm": manifest.get("integrity", {}).get("signature", {}).get("algorithm")
+                    if isinstance(manifest.get("integrity", {}).get("signature"), dict)
+                    else None,
+                    "signature_key_id": manifest.get("integrity", {}).get("signature", {}).get("key_id")
+                    if isinstance(manifest.get("integrity", {}).get("signature"), dict)
+                    else None,
                 }
             )
     return metadata
@@ -234,6 +245,9 @@ def export_bundle_api(config: GatewayConfig, payload: JSONDict) -> JSONDict:
         out=out_path,
         include_snapshots=bool(payload.get("include_snapshots", False)),
         redact_transcript=bool(payload.get("redact_transcript", False)),
+        signature_key_file=config.signature_key_file,
+        signature_key_env=config.signature_key_env,
+        signature_key_id=config.signature_key_id,
         force=bool(payload.get("force", False)),
     )
     with config.lock:
@@ -248,6 +262,9 @@ def import_bundle_file(config: GatewayConfig, path: Path, force: bool = False) -
         state_dir=config.state_dir,
         bundle=path,
         thread_id=None,
+        signature_key_file=config.signature_key_file,
+        signature_key_env=config.signature_key_env,
+        require_signature=config.require_bundle_signature,
         force=force,
     )
     with config.lock:
@@ -595,6 +612,8 @@ def make_handler(config: GatewayConfig) -> type[BaseHTTPRequestHandler]:
                         "checkpoint_mode": config.checkpoint_mode,
                         "threads": len(thread_summaries(config)),
                         "bundles": len(list_bundles(config)),
+                        "bundle_signing": bool(config.signature_key_file or config.signature_key_env),
+                        "require_bundle_signature": config.require_bundle_signature,
                     },
                 )
                 return
@@ -688,6 +707,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--default-prefill")
     parser.add_argument("--default-thread-prefix", default="gateway")
     parser.add_argument("--max-bundle-bytes", default="5GB", help="Maximum raw .scap upload accepted by /api/capsules/import.")
+    parser.add_argument("--signature-key-file", type=Path, help="Optional local key file used to sign gateway exports and verify signed imports.")
+    parser.add_argument("--signature-key-env", help="Optional environment variable containing the gateway bundle signing key.")
+    parser.add_argument("--signature-key-id", help="Non-secret key label written into gateway-signed bundles.")
+    parser.add_argument("--require-bundle-signature", action="store_true", help="Require uploaded or stored bundles to verify with the configured signature key before import.")
     return parser
 
 
@@ -709,6 +732,10 @@ def main() -> int:
         default_prefill=args.default_prefill,
         default_thread_prefix=args.default_thread_prefix,
         max_bundle_bytes=cc.parse_bytes(args.max_bundle_bytes),
+        signature_key_file=args.signature_key_file.resolve() if args.signature_key_file else None,
+        signature_key_env=args.signature_key_env,
+        signature_key_id=args.signature_key_id,
+        require_bundle_signature=args.require_bundle_signature,
         lock=threading.Lock(),
     )
     # Fail fast if endpoint is not configured.

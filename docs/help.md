@@ -172,6 +172,12 @@ Raw uploads are capped by the gateway launch flag:
 py -3 .\scripts\capsule_gateway.py --state-dir .\.capsules --endpoint local-llamacpp --max-bundle-bytes 5GB
 ```
 
+Gateway bundle signing is also launch policy:
+
+```powershell
+py -3 .\scripts\capsule_gateway.py --state-dir .\.capsules --endpoint local-llamacpp --signature-key-file .\capsule-signing.key --signature-key-id local --require-bundle-signature
+```
+
 ## Security
 
 Exported `.scap` bundles include per-entry SHA-256 digests in `manifest.json`.
@@ -197,6 +203,7 @@ Current boundary:
 - implemented: optional HMAC-SHA256 signatures
 - key sources: `--signature-key-file` or `--signature-key-env`
 - keys are not stored in `.capsules`
+- gateway signing/required-signature import is controlled by launch flags
 - not implemented yet: encryption or sealed user-carried blobs
 
 ## Model Plane

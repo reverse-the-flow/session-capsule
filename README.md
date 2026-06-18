@@ -174,6 +174,12 @@ py -3 .\scripts\capsule_cli.py export --thread research-loop-small --out .\resea
 py -3 .\scripts\capsule_cli.py verify .\research-loop-small.scap --signature-key-file .\capsule-signing.key --require-signature
 ```
 
+The gateway can apply the same policy to upload/download transport:
+
+```powershell
+py -3 .\scripts\capsule_gateway.py --state-dir .\.capsules --endpoint local-llamacpp --signature-key-file .\capsule-signing.key --signature-key-id local --require-bundle-signature
+```
+
 Inspect and clean local hard capsule storage:
 
 ```powershell

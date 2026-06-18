@@ -434,6 +434,7 @@ Initial status:
 - `DELETE /api/capsules/bundles/{bundle_id}` deletes a stored bundle without deleting imported thread state.
 - Bundle ids are slugged and scoped to `.capsules/bundles/`.
 - The gateway launch flag `--max-bundle-bytes` caps raw upload size.
+- Gateway launch flags can sign exported bundles and require verified signatures before import.
 - `scripts/test_capsule_gateway_fake_backend.py` validates export, list, download, raw upload import, and delete through the gateway.
 - Model Plane job packets can now invoke the gateway transport endpoints through `capsule_cli.py job run`.
 
@@ -467,6 +468,7 @@ Initial status:
 - `export --signature-key-file KEY --signature-key-id ID` writes an optional HMAC-SHA256 signature.
 - `verify --signature-key-file KEY --require-signature` verifies the bundle signature.
 - `import --signature-key-file KEY --require-signature` verifies a required signature before extraction.
+- `capsule_gateway.py --signature-key-file KEY --require-bundle-signature` applies signing and required verification to gateway transport.
 - `import BUNDLE.scap` verifies bundles that include `file_digests` before extracting state files.
 - `scripts/test_capsule_cli_export_import.py` validates successful verification, signature checks, and tamper rejection.
 - Encryption and sealed user-carried blobs are not implemented yet.

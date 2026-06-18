@@ -112,10 +112,14 @@ These should stay as launch-time values because they describe the current proces
 | `--default-prefill` | `user_default` | Optional launch default. |
 | `--timeout` | `120` | Network/runtime timeout for this launch. |
 | `--max-bundle-bytes` | `5GB` | Maximum raw `.scap` upload accepted by this gateway process. |
+| `--signature-key-file` | `.capsule-signing.key` | Optional gateway signing key file for bundle export/import verification. |
+| `--signature-key-env` | `CAPSULE_SIGNING_KEY` | Optional gateway signing key environment variable. |
+| `--signature-key-id` | `local` | Non-secret label written into signed bundles. |
+| `--require-bundle-signature` | flag | Requires gateway imports to verify with the configured signing key. |
 
 ## Secret Inputs
 
-Signature keys are per-command secret inputs, not persistent settings:
+Signature keys are secret inputs, not persistent settings:
 
 | Setting | Example | Why |
 | --- | --- | --- |
@@ -123,7 +127,7 @@ Signature keys are per-command secret inputs, not persistent settings:
 | `--signature-key-env` | `CAPSULE_SIGNING_KEY` | Reads a signing key from the process environment. |
 | `--signature-key-id` | `local` | Non-secret label written into signed bundle metadata. |
 
-Do not put signing keys in `settings.json` or endpoint records.
+For the gateway, these are launch-profile values. Do not put signing keys in `settings.json`, endpoint records, or Model Plane job packets.
 
 ## Endpoint Records
 

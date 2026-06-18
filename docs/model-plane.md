@@ -78,6 +78,8 @@ POST   /api/capsules/import
 
 The gateway owns local export/import mechanics. Model Plane owns auth, UX, retention, and remote exposure.
 
+If signed transport is required, Model Plane should launch the gateway with `--signature-key-file` or `--signature-key-env` and `--require-bundle-signature`. Signing keys should not be placed inside job packets.
+
 The standalone harness can execute those transport intents as job packets:
 
 ```powershell

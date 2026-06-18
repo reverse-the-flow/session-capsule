@@ -8,6 +8,8 @@ It does not move model weights. It moves the portable thread artifact: ledger, t
 
 The gateway owns local bundle creation, local bundle storage, download, upload, and import. Model Plane or another UI can call these endpoints instead of reimplementing export/import mechanics.
 
+Gateway bundle signing is launch policy. If the gateway is started with `--signature-key-file` or `--signature-key-env`, exported bundles are signed. If it is also started with `--require-bundle-signature`, imports must verify with that key before extraction.
+
 ## Gateway Endpoints
 
 The local gateway exposes:
@@ -57,6 +59,16 @@ Response shape:
 Export defaults to ledger-only. Set `include_snapshots=true` only when intentionally moving same-runtime hard snapshot blobs.
 
 Every new export includes `file_digests` in `manifest.json`. The digest index covers every zip entry except `manifest.json`.
+
+If the gateway has a configured signing key, the export response metadata includes:
+
+```json
+{
+  "signature_present": true,
+  "signature_algorithm": "hmac-sha256",
+  "signature_key_id": "local"
+}
+```
 
 ## List And Download
 
@@ -149,6 +161,7 @@ Gateway owns:
 - raw `.scap` upload
 - import into local capsule state
 - max upload size enforcement
+- optional signing and required-signature verification as launch policy
 
 Model Plane owns:
 
@@ -170,6 +183,7 @@ Implemented now:
 - import-time digest verification for bundles that carry `file_digests`
 - duplicate zip-entry rejection
 - required signature verification with `--require-signature`
+- gateway signing and required import verification through launch flags
 
 Not implemented yet:
 

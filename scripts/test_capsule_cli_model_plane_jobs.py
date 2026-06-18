@@ -125,6 +125,10 @@ def main() -> None:
             default_prefill=None,
             default_thread_prefix="gateway",
             max_bundle_bytes=10 * 1000 * 1000,
+            signature_key_file=None,
+            signature_key_env=None,
+            signature_key_id=None,
+            require_bundle_signature=False,
             lock=threading.Lock(),
         )
         gateway = capsule_gateway.create_server(config)
