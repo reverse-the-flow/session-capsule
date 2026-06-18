@@ -63,6 +63,7 @@ The CLI help topics are:
 - `gateway`
 - `transport`
 - `storage`
+- `state`
 - `bundles`
 - `security`
 - `model-plane`
@@ -85,6 +86,22 @@ Use it for policy:
 - `storage.protect_active_prefills`
 
 Storage budget is persistent because it is a lifecycle rule, not a one-process choice.
+
+## State Location
+
+V0 capsule state is project-local by default:
+
+```text
+.capsules/
+```
+
+Inspect the active state root:
+
+```powershell
+py -3 .\scripts\capsule_cli.py state info
+```
+
+Use `--state-dir` only when intentionally overriding the state root for tests, shared workspaces, or Model Plane launch profiles. User-level/global state is a future integration option, not the default.
 
 ## Launch Flags
 

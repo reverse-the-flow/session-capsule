@@ -120,6 +120,7 @@ Create persistent capsule config:
 
 ```powershell
 py -3 .\scripts\capsule_cli.py config init
+py -3 .\scripts\capsule_cli.py state info
 py -3 .\scripts\capsule_cli.py config set storage.max_bytes 50GB
 py -3 .\scripts\capsule_cli.py config set storage.min_free_bytes 20GB
 ```

@@ -14,6 +14,20 @@ The persistent config lives in:
 .capsules/config/settings.json
 ```
 
+V0 capsule state is project-local by default:
+
+```text
+.capsules/
+```
+
+Use `--state-dir` only when you intentionally want a different state root for tests, a shared workspace, or a Model Plane launch profile. User-level/global state is a future integration option, not the default.
+
+Inspect the active state root:
+
+```powershell
+py -3 .\scripts\capsule_cli.py state info
+```
+
 Use it for policy that should survive restarts, especially storage lifecycle rules.
 
 Launch flags are still the right place for process-specific values such as gateway port, gateway host, runtime slot, and one-off timeouts.

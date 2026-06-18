@@ -128,6 +128,7 @@ More:
   capsule help transport
   capsule help security
   capsule help storage
+  capsule help state
   capsule help model-plane""",
     "config": """Persistent config lives under:
   .capsules/config/settings.json
@@ -146,7 +147,23 @@ Commands:
   py -3 .\\scripts\\capsule_cli.py config set storage.max_bytes 50GB
 
 Launch-specific values stay as flags or Model Plane launch profile fields:
-  --host, --port, --endpoint, --slot, --checkpoint-mode, --timeout""",
+  --state-dir, --host, --port, --endpoint, --slot, --checkpoint-mode, --timeout""",
+    "state": """Capsule state is project-local by default.
+
+Default state directory:
+  .capsules/
+
+Inspect state location:
+  py -3 .\\scripts\\capsule_cli.py state info
+
+Override state for tests, shared workspaces, or Model Plane launch profiles:
+  py -3 .\\scripts\\capsule_cli.py --state-dir C:\\path\\to\\.capsules state info
+
+V0 policy:
+  .capsules/ is the default and recommended project-local state root
+  --state-dir is the explicit override
+  user-level/global state is a future integration option, not the default
+  manifests store paths relative to the selected state root""",
     "endpoint": """Endpoint records describe a model target. They do not contain model weights.
 
 Add an endpoint:
@@ -3061,6 +3078,28 @@ def inspect(args: argparse.Namespace) -> int:
     return 0
 
 
+def state_info(args: argparse.Namespace) -> int:
+    store = Store(args.state_dir)
+    state_dir = store.root.resolve()
+    cwd = Path.cwd().resolve()
+    try:
+        relative = state_dir.relative_to(cwd).as_posix()
+    except ValueError:
+        relative = str(state_dir)
+    endpoints = sorted(store.endpoints_dir.glob("*.json")) if store.endpoints_dir.exists() else []
+    threads = sorted(store.threads_dir.glob("*/thread-ledger.json")) if store.threads_dir.exists() else []
+    print(f"state_dir: {state_dir}")
+    print(f"state_ref: {relative}")
+    print(f"default_state_dir: .capsules")
+    print(f"policy: project_local_default")
+    print(f"override: --state-dir")
+    print(f"config_path: {store.config_path}")
+    print(f"endpoints: {len(endpoints)}")
+    print(f"threads: {len(threads)}")
+    print("user_level_state: future")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Manage Session Capsule ledgers and soft checkpoints.")
     parser.add_argument("--state-dir", type=Path, default=Path(".capsules"))
@@ -3194,6 +3233,12 @@ def build_parser() -> argparse.ArgumentParser:
     gateway_check.add_argument("--json", action="store_true", help="Print a machine-readable status payload.")
     gateway_check.add_argument("--timeout", type=float, help="Override gateway status request timeout.")
     gateway_check.set_defaults(func=check_gateway_profile)
+
+    state_cmd = subcommands.add_parser("state")
+    state_sub = state_cmd.add_subparsers(dest="state_command", required=True)
+
+    state_info_parser = state_sub.add_parser("info", help="Show capsule state directory policy and paths.")
+    state_info_parser.set_defaults(func=state_info)
 
     config_cmd = subcommands.add_parser("config")
     config_sub = config_cmd.add_subparsers(dest="config_command", required=True)

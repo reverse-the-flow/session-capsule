@@ -388,6 +388,7 @@ Recommended order:
 13. Stage 12: gateway access control
 14. Stage 13: Model Plane gateway launch profile
 15. Stage 14: snapshot reference policy
+16. Stage 15: state location policy
 
 Do not start with gateway or Model Plane. They become simpler after the ledger, manifest, and CLI lifecycle are real.
 
@@ -574,6 +575,31 @@ Initial status:
 - `scripts/test_capsule_cli_fake_llamacpp.py` verifies hard checkpoint manifests use store-relative snapshot refs.
 - `docs/protocol.md` and `docs/configuration.md` document the v0 policy.
 
+## Stage 15: State Location Policy
+
+Goal: Keep v0 state simple and project-local while preserving an explicit override path for tests, shared workspaces, and Model Plane launch profiles.
+
+Implementation steps:
+
+- Make `.capsules/` the default and recommended project-local state root.
+- Keep `--state-dir` as the explicit override.
+- Treat user-level/global state as a future integration option, not the v0 default.
+- Add a CLI command that reports the active state root and policy.
+- Document where persistent config, endpoint records, threads, bundles, and hard snapshots live relative to the selected state root.
+
+Exit criteria:
+
+- Users can inspect which state root a command will use.
+- The docs answer whether state is project-local or user-level in v0.
+- The roadmap no longer carries state location as an unresolved open question.
+
+Initial status:
+
+- `capsule_cli.py state info` reports the selected state directory, config path, endpoint/thread counts, default state root, and override flag.
+- `capsule help state` documents the project-local default and `--state-dir` override.
+- `docs/configuration.md` and `docs/help.md` state that `.capsules/` is the v0 default and user-level/global state is future work.
+- `scripts/test_capsule_cli_help.py` covers the state help topic and `state info` output.
+
 ## First Three Implementation Tickets
 
 ### Ticket 1: Schema Pack
@@ -631,7 +657,6 @@ Initial status:
 
 ## Open Questions
 
-- Should local state live in `.capsules/` inside each project, or in a user-level data directory with project references?
 - Which `llama.cpp` server builds expose the most stable slot API fields?
 - What is the smallest thread id metadata Open WebUI and opencode can pass without custom plugins?
 - Which opencode hook should fill per-session capsule headers automatically instead of relying on launch-time environment variables?

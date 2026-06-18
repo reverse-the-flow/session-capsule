@@ -29,7 +29,7 @@ def run_cli(*args: str) -> str:
 
 def main() -> None:
     topics = run_cli("help", "--topics")
-    for expected in ["overview", "config", "gateway", "transport", "storage", "security", "model-plane", "troubleshooting"]:
+    for expected in ["overview", "config", "gateway", "transport", "storage", "state", "security", "model-plane", "troubleshooting"]:
         if expected not in topics:
             raise AssertionError(f"help topic missing: {expected}")
 
@@ -40,6 +40,14 @@ def main() -> None:
     storage = run_cli("help", "storage")
     if "Pinned capsules are always protected" not in storage:
         raise AssertionError("storage help did not describe pinned protection")
+
+    state_help = run_cli("help", "state")
+    if "project-local" not in state_help or "--state-dir" not in state_help:
+        raise AssertionError("state help did not explain project-local default and override")
+
+    state_info = run_cli("state", "info")
+    if "policy: project_local_default" not in state_info or "default_state_dir: .capsules" not in state_info:
+        raise AssertionError("state info did not report the v0 state location policy")
 
     gateway = run_cli("help", "gateway")
     if "http://127.0.0.1:8765/v1" not in gateway:

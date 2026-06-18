@@ -15,6 +15,7 @@ It performs:
 - schema/example validation, including restore-failure schema fields
 - Model Plane gateway launch-profile schema/example validation
 - conceptual CLI help smoke test
+- state-location help and `state info` smoke test
 - fake `llama.cpp` hard capsule save/restore, shutdown job, and failed-restore fallback smoke test
 - store-relative hard snapshot reference smoke test
 - `.scap` export/import/verify, dry-run sizing, endpoint compatibility warning, signature, and tamper-rejection smoke test
