@@ -74,6 +74,9 @@ def main() -> None:
         gateway_token = temp_path / "gateway-token.txt"
         gateway_token.write_text("job-gateway-token\n", encoding="utf-8")
         gateway_auth_args = ("--gateway-auth-token-file", str(gateway_token))
+        signature_key = temp_path / "job-signature.key"
+        signature_key.write_text("job-signing-key\n", encoding="utf-8")
+        job_signature_args = ("--signature-key-file", str(signature_key), "--signature-key-id", "job-test")
 
         run_cli(
             state,
@@ -118,9 +121,26 @@ def main() -> None:
                 "force": False,
             },
         )
-        run_cli(state, "job", "run", str(export_job))
+        run_cli(state, "job", "run", str(export_job), *job_signature_args)
         if not bundle.exists():
             raise AssertionError("export job did not create bundle")
+        signed_job_verify = run_cli(state, "verify", str(bundle), "--signature-key-file", str(signature_key), "--require-signature")
+        if "signature: verified" not in signed_job_verify.stdout:
+            raise AssertionError("export job did not sign bundle with runner-side key")
+
+        secret_param_job = jobs / "bad-secret-param.json"
+        write_job(
+            secret_param_job,
+            "export_thread",
+            {
+                "thread_id": "job-thread",
+                "out": str(temp_path / "bad-secret.scap"),
+                "signature_key_file": str(signature_key),
+            },
+        )
+        secret_param_failure = run_cli_failure(state, "job", "run", str(secret_param_job))
+        if "must not contain secret input keys" not in secret_param_failure.stderr:
+            raise AssertionError("job packet secret key guard did not reject signature_key_file")
 
         resume_job = jobs / "resume-thread.json"
         write_job(

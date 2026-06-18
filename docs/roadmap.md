@@ -235,6 +235,7 @@ Initial status:
 
 - `export --thread X --out X.scap` writes a zip bundle with ledger, transcript, endpoint metadata, capsule manifests, prefill sources, and capsule index.
 - Snapshot blobs are omitted by default and require `--include-snapshots`.
+- `export --dry-run` prints the planned bundle entries and estimated payload bytes before writing.
 - `import X.scap` restores endpoint, prefill, and thread files into a fresh state directory.
 - `scripts/test_capsule_cli_export_import.py` validates a ledger-only bundle round trip.
 
@@ -354,6 +355,8 @@ Initial status:
 - `examples/model-plane/` contains example packets for `resume_thread`, `checkpoint_thread`, `export_thread`, and `validate_capsule`.
 - `capsule_cli.py job run JOB.json` executes those packets through the existing harness paths.
 - `--dry-run` prints packet intent without touching the ledger or runtime.
+- `export_thread` jobs can sign bundles with runner-side `--signature-key-file`, `--signature-key-env`, and `--signature-key-id` flags.
+- Job packet validation rejects secret key or auth-token params so secrets stay outside packets.
 - `docs/model-plane.md` records the boundary: Model Plane owns routing and policy, not model weights, live KV tensors, runtime slot layout, or the inference loop.
 - Gateway transport job packet types cover bundle export, list, download, import, and delete through the local gateway API.
 
@@ -468,6 +471,7 @@ Initial status:
 - New `.scap` exports include `file_digests` for every zip entry except `manifest.json`.
 - `capsule_cli.py verify BUNDLE.scap` verifies the file digest index.
 - `export --signature-key-file KEY --signature-key-id ID` writes an optional HMAC-SHA256 signature.
+- `capsule_cli.py job run EXPORT_JOB.json --signature-key-file KEY` signs direct Model Plane export jobs without storing the key in the packet.
 - `verify --signature-key-file KEY --require-signature` verifies the bundle signature.
 - `import --signature-key-file KEY --require-signature` verifies a required signature before extraction.
 - `capsule_gateway.py --signature-key-file KEY --require-bundle-signature` applies signing and required verification to gateway transport.

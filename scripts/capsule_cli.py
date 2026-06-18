@@ -68,6 +68,41 @@ BYTE_UNITS = {
     "TIB": 1024**4,
 }
 
+SECRET_JOB_PARAM_KEYS = {
+    "auth_token",
+    "auth_token_env",
+    "auth_token_file",
+    "gateway_auth_token",
+    "gateway_auth_token_env",
+    "gateway_auth_token_file",
+    "signature_key",
+    "signature_key_env",
+    "signature_key_file",
+}
+
+
+@dataclass
+class BundleEntry:
+    name: str
+    data: bytes | None = None
+    source: Path | None = None
+
+    @property
+    def size(self) -> int:
+        if self.data is not None:
+            return len(self.data)
+        if self.source is not None and self.source.exists():
+            return self.source.stat().st_size
+        return 0
+
+
+@dataclass
+class ExportBundlePlan:
+    entries: list[BundleEntry]
+    included_files: list[str]
+    omitted_snapshots: list[str]
+    payload_bytes: int
+
 HELP_TOPICS: dict[str, str] = {
     "overview": """Session Capsules keep the transcript canonical and treat hard runtime snapshots as acceleration.
 
@@ -230,6 +265,9 @@ Apply cleanup:
 Ledger-only export:
   py -3 .\\scripts\\capsule_cli.py export --thread research-loop --out .\\research-loop.scap
 
+Preview export size without writing:
+  py -3 .\\scripts\\capsule_cli.py export --thread research-loop --out .\\research-loop.scap --dry-run
+
 Include local hard snapshots only when intentionally moving same-runtime blobs:
   py -3 .\\scripts\\capsule_cli.py export --thread research-loop --out .\\research-loop.scap --include-snapshots
 
@@ -281,6 +319,9 @@ Capsule gateway owns:
 
 Run a job packet:
   py -3 .\\scripts\\capsule_cli.py job run .\\examples\\model-plane\\checkpoint-thread.example.json --dry-run
+
+Signed export job packets:
+  py -3 .\\scripts\\capsule_cli.py job run .\\examples\\model-plane\\export-thread.example.json --signature-key-file .\\capsule-signing.key --signature-key-id local
 
 Protected gateway transport jobs:
   py -3 .\\scripts\\capsule_cli.py job run .\\examples\\model-plane\\gateway-download-bundle.example.json --gateway-auth-token-file .\\capsule-gateway-token
@@ -1534,11 +1575,127 @@ def add_text_to_zip(bundle: zipfile.ZipFile, name: str, content: str) -> None:
     bundle.writestr(safe_zip_name(name), content)
 
 
+def add_bytes_to_zip(bundle: zipfile.ZipFile, name: str, content: bytes) -> None:
+    bundle.writestr(safe_zip_name(name), content)
+
+
 def add_file_to_zip(bundle: zipfile.ZipFile, source: Path, arcname: str) -> bool:
     if not source.exists() or not source.is_file():
         return False
     bundle.write(source, safe_zip_name(arcname))
     return True
+
+
+def pretty_json_bytes(data: JSONDict | list[JSONDict]) -> bytes:
+    return (json.dumps(data, indent=2) + "\n").encode("utf-8")
+
+
+def text_bytes(value: str) -> bytes:
+    return value.encode("utf-8")
+
+
+def add_export_data(entries: list[BundleEntry], name: str, content: bytes) -> None:
+    entries.append(BundleEntry(safe_zip_name(name), data=content))
+
+
+def add_export_file(entries: list[BundleEntry], source: Path, arcname: str) -> bool:
+    if not source.exists() or not source.is_file():
+        return False
+    entries.append(BundleEntry(safe_zip_name(arcname), source=source))
+    return True
+
+
+def build_export_plan(
+    store: Store,
+    ledger: JSONDict,
+    thread_id: str,
+    transcript_content: str,
+    include_snapshots: bool,
+    redact_transcript: bool,
+) -> ExportBundlePlan:
+    entries: list[BundleEntry] = []
+    capsule_index: list[JSONDict] = []
+    omitted_snapshots: list[str] = []
+    included_files: list[str] = []
+
+    add_export_data(entries, "thread-ledger.json", pretty_json_bytes(ledger))
+    add_export_data(entries, "transcript.jsonl", text_bytes(transcript_content))
+
+    state_ledger_ref = f"threads/{thread_id}/thread-ledger.json"
+    add_export_data(entries, state_ledger_ref, pretty_json_bytes(ledger))
+    included_files.append(state_ledger_ref)
+
+    state_transcript_ref = ledger["transcript_ref"]
+    add_export_data(entries, state_transcript_ref, text_bytes(transcript_content))
+    included_files.append(state_transcript_ref)
+
+    endpoint_ref = f"endpoints/{ledger['endpoint_id']}.json"
+    if add_export_file(entries, store.root / endpoint_ref, endpoint_ref):
+        included_files.append(endpoint_ref)
+
+    for link in ledger.get("capsules", []):
+        manifest_ref = link["manifest_ref"]
+        manifest_path = store.root / manifest_ref
+        if not manifest_path.exists():
+            capsule_index.append({**link, "included_manifest": False})
+            continue
+        manifest = read_json(manifest_path)
+        add_export_file(entries, manifest_path, manifest_ref)
+        included_files.append(manifest_ref)
+
+        prefill_source = manifest.get("prefill_source")
+        if prefill_source and not redact_transcript:
+            source_ref = prefill_source.get("source_ref")
+            if source_ref and add_export_file(entries, store.root / source_ref, source_ref):
+                included_files.append(source_ref)
+
+        snapshot_included = False
+        snapshot_ref = manifest.get("storage", {}).get("snapshot_ref")
+        if snapshot_ref:
+            if include_snapshots:
+                snapshot_included = add_export_file(entries, store.root / snapshot_ref, snapshot_ref)
+                if snapshot_included:
+                    included_files.append(snapshot_ref)
+            else:
+                omitted_snapshots.append(snapshot_ref)
+
+        capsule_index.append(
+            {
+                **link,
+                "included_manifest": True,
+                "included_snapshot": snapshot_included,
+                "snapshot_ref": snapshot_ref,
+            }
+        )
+
+    add_export_data(entries, "capsule-index.json", pretty_json_bytes(capsule_index))
+    return ExportBundlePlan(
+        entries=entries,
+        included_files=sorted(set(included_files)),
+        omitted_snapshots=sorted(set(omitted_snapshots)),
+        payload_bytes=sum(entry.size for entry in entries),
+    )
+
+
+def write_export_plan(out_path: Path, plan: ExportBundlePlan) -> None:
+    with zipfile.ZipFile(out_path, "w", compression=zipfile.ZIP_DEFLATED) as bundle:
+        for entry in plan.entries:
+            if entry.data is not None:
+                add_bytes_to_zip(bundle, entry.name, entry.data)
+            elif entry.source is not None:
+                add_file_to_zip(bundle, entry.source, entry.name)
+
+
+def print_export_plan(out_path: Path, thread_id: str, include_snapshots: bool, plan: ExportBundlePlan, dry_run: bool) -> None:
+    label = "would export bundle" if dry_run else "export plan"
+    print(f"{label}: {out_path}")
+    print(f"thread: {thread_id}")
+    print(f"entries: {len(plan.entries)}")
+    print(f"estimated payload bytes: {plan.payload_bytes}")
+    print(f"estimated payload size: {format_bytes(plan.payload_bytes)}")
+    print(f"snapshots included: {include_snapshots}")
+    if plan.omitted_snapshots:
+        print(f"omitted snapshots: {len(plan.omitted_snapshots)}")
 
 
 def zip_payload_digests(bundle: zipfile.ZipFile) -> dict[str, str]:
@@ -1680,18 +1837,26 @@ def export_bundle(args: argparse.Namespace) -> int:
     store = Store(args.state_dir)
     ledger = store.load_ledger(args.thread)
     out_path = args.out.resolve()
-    if out_path.exists() and not args.force:
-        raise FileExistsError(f"Bundle already exists: {out_path}")
-    out_path.parent.mkdir(parents=True, exist_ok=True)
-
     transcript_path = store.transcript_path(args.thread)
     transcript_content = transcript_path.read_text(encoding="utf-8") if transcript_path.exists() else ""
     if args.redact_transcript:
         transcript_content = ""
 
-    capsule_index: list[JSONDict] = []
-    omitted_snapshots: list[str] = []
-    included_files: list[str] = []
+    plan = build_export_plan(
+        store,
+        ledger,
+        args.thread,
+        transcript_content,
+        bool(args.include_snapshots),
+        bool(args.redact_transcript),
+    )
+    print_export_plan(out_path, args.thread, bool(args.include_snapshots), plan, bool(getattr(args, "dry_run", False)))
+    if getattr(args, "dry_run", False):
+        return 0
+
+    if out_path.exists() and not args.force:
+        raise FileExistsError(f"Bundle already exists: {out_path}")
+    out_path.parent.mkdir(parents=True, exist_ok=True)
 
     bundle_manifest: JSONDict = {
         "schema_version": "0.1",
@@ -1707,62 +1872,9 @@ def export_bundle(args: argparse.Namespace) -> int:
         ],
     }
 
-    with zipfile.ZipFile(out_path, "w", compression=zipfile.ZIP_DEFLATED) as bundle:
-        add_text_to_zip(bundle, "thread-ledger.json", json.dumps(ledger, indent=2) + "\n")
-        add_text_to_zip(bundle, "transcript.jsonl", transcript_content)
-
-        state_ledger_ref = f"threads/{args.thread}/thread-ledger.json"
-        add_text_to_zip(bundle, state_ledger_ref, json.dumps(ledger, indent=2) + "\n")
-        included_files.append(state_ledger_ref)
-
-        state_transcript_ref = ledger["transcript_ref"]
-        add_text_to_zip(bundle, state_transcript_ref, transcript_content)
-        included_files.append(state_transcript_ref)
-
-        endpoint_ref = f"endpoints/{ledger['endpoint_id']}.json"
-        endpoint_path = store.root / endpoint_ref
-        if add_file_to_zip(bundle, endpoint_path, endpoint_ref):
-            included_files.append(endpoint_ref)
-
-        for link in ledger.get("capsules", []):
-            manifest_ref = link["manifest_ref"]
-            manifest_path = store.root / manifest_ref
-            if not manifest_path.exists():
-                capsule_index.append({**link, "included_manifest": False})
-                continue
-            manifest = read_json(manifest_path)
-            add_file_to_zip(bundle, manifest_path, manifest_ref)
-            included_files.append(manifest_ref)
-
-            prefill_source = manifest.get("prefill_source")
-            if prefill_source and not args.redact_transcript:
-                source_ref = prefill_source.get("source_ref")
-                if source_ref and add_file_to_zip(bundle, store.root / source_ref, source_ref):
-                    included_files.append(source_ref)
-
-            snapshot_included = False
-            snapshot_ref = manifest.get("storage", {}).get("snapshot_ref")
-            if snapshot_ref:
-                if args.include_snapshots:
-                    snapshot_included = add_file_to_zip(bundle, store.root / snapshot_ref, snapshot_ref)
-                    if snapshot_included:
-                        included_files.append(snapshot_ref)
-                else:
-                    omitted_snapshots.append(snapshot_ref)
-
-            capsule_index.append(
-                {
-                    **link,
-                    "included_manifest": True,
-                    "included_snapshot": snapshot_included,
-                    "snapshot_ref": snapshot_ref,
-                }
-            )
-
-        add_text_to_zip(bundle, "capsule-index.json", json.dumps(capsule_index, indent=2) + "\n")
-
-    bundle_manifest["included_files"] = sorted(set(included_files))
-    bundle_manifest["omitted_snapshots"] = sorted(set(omitted_snapshots))
+    write_export_plan(out_path, plan)
+    bundle_manifest["included_files"] = plan.included_files
+    bundle_manifest["omitted_snapshots"] = plan.omitted_snapshots
     signature_key = read_signature_key(getattr(args, "signature_key_file", None), getattr(args, "signature_key_env", None))
 
     bundle_manifest["integrity"] = {
@@ -1788,8 +1900,8 @@ def export_bundle(args: argparse.Namespace) -> int:
     print(f"exported bundle: {out_path}")
     print(f"thread: {args.thread}")
     print(f"snapshots included: {args.include_snapshots}")
-    if omitted_snapshots:
-        print(f"omitted snapshots: {len(omitted_snapshots)}")
+    print(f"bundle bytes: {out_path.stat().st_size}")
+    print(f"bundle size: {format_bytes(out_path.stat().st_size)}")
     return 0
 
 
@@ -2198,6 +2310,10 @@ def validate_job_packet(packet: JSONDict) -> None:
         raise RuntimeError(f"Unsupported job_type: {packet['job_type']}")
     if not isinstance(packet["params"], dict):
         raise RuntimeError("Job packet params must be an object")
+    secret_keys = sorted(set(packet["params"]) & SECRET_JOB_PARAM_KEYS)
+    if secret_keys:
+        joined = ", ".join(secret_keys)
+        raise RuntimeError(f"Job packet params must not contain secret input keys: {joined}. Use job runner flags.")
 
 
 def print_job_plan(packet: JSONDict) -> None:
@@ -2440,6 +2556,10 @@ def run_job_packet(args: argparse.Namespace) -> int:
             out=job_path(job_file.parent, str(require_job_param(params, "out"))),
             include_snapshots=bool(params.get("include_snapshots", False)),
             redact_transcript=bool(params.get("redact_transcript", False)),
+            signature_key_file=getattr(args, "signature_key_file", None),
+            signature_key_env=getattr(args, "signature_key_env", None),
+            signature_key_id=getattr(args, "signature_key_id", None),
+            dry_run=False,
             force=bool(params.get("force", False)),
         )
         return export_bundle(export_args)
@@ -2569,6 +2689,7 @@ def build_parser() -> argparse.ArgumentParser:
     export.add_argument("--signature-key-file", type=Path)
     export.add_argument("--signature-key-env")
     export.add_argument("--signature-key-id")
+    export.add_argument("--dry-run", action="store_true")
     export.add_argument("--force", action="store_true")
     export.set_defaults(func=export_bundle)
 
@@ -2594,6 +2715,9 @@ def build_parser() -> argparse.ArgumentParser:
     job_run = job_sub.add_parser("run")
     job_run.add_argument("job", type=Path)
     job_run.add_argument("--dry-run", action="store_true")
+    job_run.add_argument("--signature-key-file", type=Path)
+    job_run.add_argument("--signature-key-env")
+    job_run.add_argument("--signature-key-id")
     job_run.add_argument("--gateway-auth-token-file", type=Path)
     job_run.add_argument("--gateway-auth-token-env")
     job_run.set_defaults(func=run_job_packet)

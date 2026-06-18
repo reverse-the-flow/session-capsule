@@ -12,6 +12,7 @@
     "force": false
   },
   "notes": [
-    "Relative output paths are resolved from the job packet directory."
+    "Relative output paths are resolved from the job packet directory.",
+    "Signing keys are supplied to capsule_cli.py job run, not stored in this packet."
   ]
 }

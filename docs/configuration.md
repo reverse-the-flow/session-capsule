@@ -128,12 +128,14 @@ Signature keys are secret inputs, not persistent settings:
 | `--signature-key-file` | `.capsule-signing.key` | Reads a local signing key for export/import/verify without storing it in `.capsules`. |
 | `--signature-key-env` | `CAPSULE_SIGNING_KEY` | Reads a signing key from the process environment. |
 | `--signature-key-id` | `local` | Non-secret label written into signed bundle metadata. |
+| `job run --signature-key-file` | `.capsule-signing.key` | Lets the standalone job runner sign an `export_thread` bundle without placing the key in the packet. |
+| `job run --signature-key-env` | `CAPSULE_SIGNING_KEY` | Reads the export job signing key from the process environment. |
 | `--auth-token-file` | `.capsule-gateway-token` | Reads a request token required by the gateway. |
 | `--auth-token-env` | `CAPSULE_GATEWAY_TOKEN` | Reads a request token from the process environment. |
 | `job run --gateway-auth-token-file` | `.capsule-gateway-token` | Lets the standalone job runner call a protected gateway without placing the token in the packet. |
 | `job run --gateway-auth-token-env` | `CAPSULE_GATEWAY_TOKEN` | Reads the protected gateway job-runner token from the process environment. |
 
-For the gateway, these are launch-profile or command-runner values. Do not put signing keys or gateway auth tokens in `settings.json`, endpoint records, or Model Plane job packets.
+For the gateway and Model Plane job runner, these are launch-profile or command-runner values. Do not put signing keys or gateway auth tokens in `settings.json`, endpoint records, or Model Plane job packets.
 
 ## Endpoint Records
 

@@ -80,6 +80,8 @@ The gateway owns local export/import mechanics. Model Plane owns auth, UX, reten
 
 If signed transport is required, Model Plane should launch the gateway with `--signature-key-file` or `--signature-key-env` and `--require-bundle-signature`. Signing keys should not be placed inside job packets.
 
+For direct `export_thread` packets, the standalone runner can sign the output bundle with `--signature-key-file` or `--signature-key-env`. The packet carries the export intent; the runner carries the secret.
+
 If gateway auth is required, Model Plane should launch the gateway with `--auth-token-file` or `--auth-token-env` and provide the token to clients as a bearer API key or `X-Capsule-Gateway-Key`. Auth tokens should not be placed inside job packets. For standalone job execution, pass the token to the runner with `--gateway-auth-token-file` or `--gateway-auth-token-env`.
 
 The standalone harness can execute those transport intents as job packets:
@@ -88,6 +90,7 @@ The standalone harness can execute those transport intents as job packets:
 py -3 .\scripts\capsule_cli.py --state-dir .\.capsules job run .\examples\model-plane\gateway-export-bundle.example.json
 py -3 .\scripts\capsule_cli.py --state-dir .\.capsules job run .\examples\model-plane\gateway-download-bundle.example.json
 py -3 .\scripts\capsule_cli.py --state-dir .\.capsules job run .\examples\model-plane\gateway-import-bundle.example.json
+py -3 .\scripts\capsule_cli.py --state-dir .\.capsules job run .\examples\model-plane\export-thread.example.json --signature-key-file .\capsule-signing.key --signature-key-id local
 py -3 .\scripts\capsule_cli.py --state-dir .\.capsules job run .\examples\model-plane\gateway-download-bundle.example.json --gateway-auth-token-file .\capsule-gateway-token
 ```
 

@@ -78,6 +78,11 @@ def main() -> None:
         run_cli(source_state, "thread", "start", "--endpoint", "local-soft", "--prefill", "user_default", "--name", "export-thread")
         run_cli(source_state, "thread", "append", "--thread", "export-thread", "--role", "user", "--content", "First live message.")
         run_cli(source_state, "checkpoint", "--thread", "export-thread", "--soft")
+        dry_run_result = run_cli(source_state, "export", "--thread", "export-thread", "--out", str(bundle_path), "--dry-run")
+        if "would export bundle" not in dry_run_result.stdout or "estimated payload bytes" not in dry_run_result.stdout:
+            raise AssertionError("export dry-run did not print a bundle size plan")
+        if bundle_path.exists():
+            raise AssertionError("export dry-run unexpectedly created a bundle")
         run_cli(source_state, "export", "--thread", "export-thread", "--out", str(bundle_path))
 
         if not bundle_path.exists():

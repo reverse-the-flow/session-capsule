@@ -160,6 +160,7 @@ For a hard local prefill, use `--hard --slot N` after confirming the endpoint wi
 Export and import a thread bundle:
 
 ```powershell
+py -3 .\scripts\capsule_cli.py export --thread research-loop-small --out .\research-loop-small.scap --dry-run
 py -3 .\scripts\capsule_cli.py export --thread research-loop-small --out .\research-loop-small.scap
 py -3 .\scripts\capsule_cli.py verify .\research-loop-small.scap
 py -3 .\scripts\capsule_cli.py import .\research-loop-small.scap
@@ -257,6 +258,7 @@ Gateway upload/download can also be driven by Model Plane job packets:
 
 ```powershell
 py -3 .\scripts\capsule_cli.py --state-dir .\.capsules job run .\examples\model-plane\gateway-export-bundle.example.json --dry-run
+py -3 .\scripts\capsule_cli.py --state-dir .\.capsules job run .\examples\model-plane\export-thread.example.json --signature-key-file .\capsule-signing.key --signature-key-id local
 py -3 .\scripts\capsule_cli.py --state-dir .\.capsules job run .\examples\model-plane\gateway-download-bundle.example.json --gateway-auth-token-file .\capsule-gateway-token
 ```
 

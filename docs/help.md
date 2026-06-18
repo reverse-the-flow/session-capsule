@@ -208,6 +208,12 @@ py -3 .\scripts\capsule_cli.py export --thread research-loop --out .\research-lo
 py -3 .\scripts\capsule_cli.py verify .\research-loop.scap --signature-key-file .\capsule-signing.key --require-signature
 ```
 
+Preview export size without writing:
+
+```powershell
+py -3 .\scripts\capsule_cli.py export --thread research-loop --out .\research-loop.scap --dry-run
+```
+
 Import verifies bundles that include `file_digests` and rejects duplicate or digest-mismatched entries.
 
 Current boundary:
@@ -217,6 +223,7 @@ Current boundary:
 - key sources: `--signature-key-file` or `--signature-key-env`
 - keys are not stored in `.capsules`
 - gateway signing/required-signature import is controlled by launch flags
+- Model Plane export jobs can sign with runner-side `job run --signature-key-file` or `job run --signature-key-env`
 - gateway request auth is controlled by `--auth-token-file` or `--auth-token-env`
 - gateway transport jobs authenticate with `job run --gateway-auth-token-file` or `job run --gateway-auth-token-env`
 - not implemented yet: encryption or sealed user-carried blobs
@@ -234,6 +241,12 @@ Gateway transport job packet types:
 - `gateway_download_bundle`
 - `gateway_import_bundle`
 - `gateway_delete_bundle`
+
+Signed export job packets keep signing keys outside the packet:
+
+```powershell
+py -3 .\scripts\capsule_cli.py --state-dir .\.capsules job run .\examples\model-plane\export-thread.example.json --signature-key-file .\capsule-signing.key --signature-key-id local
+```
 
 Protected gateway job packets keep auth outside the packet:
 
