@@ -17,7 +17,7 @@ It performs:
 - conceptual CLI help smoke test
 - opencode integration config generation smoke test
 - state-location help and `state info` smoke test
-- fake `llama.cpp` endpoint doctor slot probe, endpoint compatibility matrix, hard capsule save/restore, shutdown job, and failed-restore fallback smoke test
+- fake `llama.cpp` endpoint doctor slot probe, runtime metadata probe, endpoint compatibility matrix, hard capsule save/restore, shutdown job, and failed-restore fallback smoke test
 - state-relative ledger, prefill, and hard snapshot reference smoke test
 - `.scap` export/import/verify, dry-run sizing, endpoint compatibility warning, signature, sealed envelope with recipient-file key reference, and tamper-rejection smoke test
 - `.scap` import thread-id override and ref remapping smoke test
@@ -53,7 +53,8 @@ The gateway integration contract is verified by fake-backend tests that exercise
 
 - OpenAI-compatible `/v1/chat/completions`
 - persisted `endpoint doctor` slot probe evidence from `/slots`
-- endpoint compatibility matrix summarizing persisted slot probe evidence for launchers
+- persisted non-fatal `endpoint doctor` runtime metadata probe evidence from `/props`
+- endpoint compatibility matrix summarizing persisted slot and runtime metadata probe evidence for launchers
 - explicit `X-Capsule-*` headers
 - Open WebUI-style forwarded identity headers
 - hard restore plus diff forwarding

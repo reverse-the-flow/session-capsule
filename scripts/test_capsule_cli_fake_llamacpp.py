@@ -40,6 +40,17 @@ class FakeLlamaHandler(BaseHTTPRequestHandler):
         return json.loads(self.rfile.read(length).decode("utf-8"))
 
     def do_GET(self) -> None:  # noqa: N802
+        if self.path == "/props":
+            self.send_json(
+                {
+                    "build_info": "fake-build-from-props",
+                    "model_path": "fake-model-from-props.gguf",
+                    "model_hash": "sha256-fake-model-from-props",
+                    "tokenizer_hash": "sha256-fake-tokenizer-from-props",
+                    "n_ctx": 8192,
+                }
+            )
+            return
         if self.path == "/slots":
             self.send_json(
                 [
@@ -173,6 +184,7 @@ def main() -> None:
                 raise AssertionError("endpoint doctor did not report configured chat slot field")
             endpoint_record = json.loads((state / "endpoints" / "local-llamacpp.json").read_text(encoding="utf-8"))
             slot_probe = endpoint_record.get("doctor", {}).get("slot_probe", {})
+            runtime_probe = endpoint_record.get("doctor", {}).get("runtime_probe", {})
             if slot_probe.get("response_shape") != "list":
                 raise AssertionError("endpoint doctor did not persist slot response shape")
             if slot_probe.get("slot_identity_fields") != ["id"]:
@@ -183,6 +195,12 @@ def main() -> None:
                 raise AssertionError("endpoint doctor should distinguish chat slot field from /slots identity field")
             if slot_probe.get("n_ctx_values") != [8192]:
                 raise AssertionError("endpoint doctor did not persist n_ctx values")
+            if runtime_probe.get("status") != "runtime_probe_ok":
+                raise AssertionError("endpoint doctor did not persist runtime metadata probe status")
+            if runtime_probe.get("build") != "fake-build-from-props":
+                raise AssertionError("endpoint doctor did not capture runtime build metadata")
+            if endpoint_record.get("runtime", {}).get("model_ref") != "fake-model-from-props.gguf":
+                raise AssertionError("endpoint doctor did not update endpoint model reference from metadata")
             matrix = run_cli(state, "endpoint", "matrix", "--json")
             matrix_report = json.loads(matrix.stdout)
             if matrix_report.get("report_type") != "session_capsule_endpoint_matrix":
@@ -194,8 +212,14 @@ def main() -> None:
                 raise AssertionError("endpoint matrix did not summarize successful slot probing")
             if matrix_endpoint["slot_probe"]["slot_identity_fields"] != ["id"]:
                 raise AssertionError("endpoint matrix did not preserve slot identity fields")
+            if matrix_endpoint["doctor"]["runtime_probe"]["status"] != "runtime_probe_ok":
+                raise AssertionError("endpoint matrix did not summarize runtime metadata probe")
             matrix_text = run_cli(state, "endpoint", "matrix")
-            if "status=slot_probe_ok" not in matrix_text.stdout or "n_ctx=8192" not in matrix_text.stdout:
+            if (
+                "status=slot_probe_ok" not in matrix_text.stdout
+                or "n_ctx=8192" not in matrix_text.stdout
+                or "runtime_probe=runtime_probe_ok" not in matrix_text.stdout
+            ):
                 raise AssertionError("endpoint matrix human output did not summarize probe status")
             source_path = Path(temp) / "user_prefill.md"
             source_path.write_text("Stable user prefill for fake runtime.", encoding="utf-8")

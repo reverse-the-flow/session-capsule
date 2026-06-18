@@ -181,6 +181,58 @@
               }
             }
           }
+        },
+        "runtime_probe": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "status": {
+              "type": "string",
+              "enum": ["runtime_probe_ok", "runtime_probe_unavailable"]
+            },
+            "metadata_url": {
+              "type": "string"
+            },
+            "client_duration_ms": {
+              "type": "number",
+              "minimum": 0
+            },
+            "response_shape": {
+              "type": "string"
+            },
+            "sample_keys": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "observed_fields": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "enum": ["build", "model_ref", "model_hash", "tokenizer_hash", "context_limit"]
+              }
+            },
+            "build": {
+              "type": ["string", "null"]
+            },
+            "model_ref": {
+              "type": ["string", "null"]
+            },
+            "model_hash": {
+              "type": ["string", "null"]
+            },
+            "tokenizer_hash": {
+              "type": ["string", "null"]
+            },
+            "context_limit": {
+              "type": ["integer", "null"],
+              "minimum": 1
+            },
+            "error": {
+              "type": "string"
+            }
+          }
         }
       }
     },

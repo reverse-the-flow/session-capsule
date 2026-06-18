@@ -719,10 +719,10 @@ Initial status:
 - The schema layer models `restore_failed` links and manifest `last_restore_failed_at` / `last_restore_error` lifecycle fields.
 - `shutdown --thread X --slot N` saves a dirty thread before model unload.
 - `endpoint doctor` persists `doctor.slot_probe` evidence for `/slots` response shape, sample keys, candidate slot identity fields, configured chat slot field, and visible context/processing fields.
-- `endpoint matrix --json` aggregates endpoint records into a `session_capsule_endpoint_matrix` report for launchers.
+- `endpoint doctor` also persists non-fatal `doctor.runtime_probe` evidence from a configurable runtime metadata path, defaulting to `/props`, and updates runtime build/model/context fields when clearly observed.
+- `endpoint matrix --json` aggregates endpoint records into a `session_capsule_endpoint_matrix` report for launchers, including slot probe and runtime metadata probe status.
 - `scripts/test_capsule_cli_fake_llamacpp.py` validates the save/restore/append-diff request path, endpoint matrix report, and failed-restore fallback against a fake slot server.
 
 ## Open Questions
 
-- Which live `llama.cpp` server builds should be captured with `endpoint doctor` and listed in the endpoint matrix?
 - Which native opencode hook can replace generated provider configs once opencode exposes stable per-session metadata?

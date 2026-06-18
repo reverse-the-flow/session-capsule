@@ -183,6 +183,10 @@ Useful metadata:
 Check hard capsule support:
   py -3 .\\scripts\\capsule_cli.py endpoint doctor local-llamacpp --strict
 
+Doctor also tries a non-fatal runtime metadata probe:
+  --runtime-metadata-path /props
+  --skip-runtime-metadata
+
 Summarize endpoint slot compatibility:
   py -3 .\\scripts\\capsule_cli.py endpoint matrix
   py -3 .\\scripts\\capsule_cli.py endpoint matrix --json
@@ -192,7 +196,8 @@ Doctor records slot probe evidence in the endpoint record:
   sample slot keys
   candidate slot identity fields
   configured chat slot field
-  visible n_ctx and is_processing fields""",
+  visible n_ctx and is_processing fields
+  runtime build/model/context fields when the metadata endpoint exposes them""",
     "thread": """A thread is the canonical transcript and capsule chain.
 
 Start:
@@ -854,6 +859,108 @@ def post_json(url: str, payload: JSONDict, timeout: float) -> tuple[JSONDict, fl
     return parsed, round(elapsed, 3)
 
 
+def endpoint_url(base_url: str, path: str) -> str:
+    normalized = path if path.startswith("/") else f"/{path}"
+    return base_url.rstrip("/") + normalized
+
+
+def scalar_metadata_value(payload: Any, candidate_keys: set[str], max_depth: int = 4) -> Any:
+    stack: list[tuple[Any, int]] = [(payload, 0)]
+    while stack:
+        value, depth = stack.pop()
+        if depth > max_depth:
+            continue
+        if isinstance(value, dict):
+            for key, item in value.items():
+                if str(key).lower() in candidate_keys and isinstance(item, (str, int, float, bool)):
+                    return item
+                if isinstance(item, (dict, list)):
+                    stack.append((item, depth + 1))
+        elif isinstance(value, list):
+            for item in value[:8]:
+                if isinstance(item, (dict, list)):
+                    stack.append((item, depth + 1))
+    return None
+
+
+def int_metadata_value(payload: Any, candidate_keys: set[str]) -> int | None:
+    value = scalar_metadata_value(payload, candidate_keys)
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float) and value.is_integer():
+        return int(value)
+    if isinstance(value, str) and value.strip().isdigit():
+        return int(value.strip())
+    return None
+
+
+def string_metadata_value(payload: Any, candidate_keys: set[str]) -> str | None:
+    value = scalar_metadata_value(payload, candidate_keys)
+    if value is None or isinstance(value, bool):
+        return None
+    text = str(value).strip()
+    return text or None
+
+
+def runtime_probe_report(payload: Any, metadata_url: str, elapsed_ms: float) -> JSONDict:
+    if isinstance(payload, dict):
+        response_shape = "object"
+        sample_keys = sorted(str(key) for key in payload)[:32]
+    elif isinstance(payload, list):
+        response_shape = "list"
+        sample_keys = []
+        for item in payload[:8]:
+            if isinstance(item, dict):
+                sample_keys.extend(str(key) for key in item)
+        sample_keys = sorted(set(sample_keys))[:32]
+    else:
+        response_shape = type(payload).__name__
+        sample_keys = []
+
+    build = string_metadata_value(payload, {"build", "build_id", "build_info", "commit", "git_commit", "version"})
+    model_ref = string_metadata_value(payload, {"model", "model_ref", "model_name", "model_path", "model_alias"})
+    model_hash = string_metadata_value(payload, {"model_hash", "model_sha256", "model_digest"})
+    tokenizer_hash = string_metadata_value(payload, {"tokenizer_hash", "tokenizer_sha256", "tokenizer_digest"})
+    context_limit = int_metadata_value(payload, {"context_limit", "ctx_size", "n_ctx", "n_ctx_train"})
+    observed_fields = sorted(
+        key
+        for key, value in {
+            "build": build,
+            "model_ref": model_ref,
+            "model_hash": model_hash,
+            "tokenizer_hash": tokenizer_hash,
+            "context_limit": context_limit,
+        }.items()
+        if value is not None
+    )
+    return {
+        "status": "runtime_probe_ok",
+        "metadata_url": metadata_url,
+        "client_duration_ms": elapsed_ms,
+        "response_shape": response_shape,
+        "sample_keys": sample_keys,
+        "observed_fields": observed_fields,
+        "build": build,
+        "model_ref": model_ref,
+        "model_hash": model_hash,
+        "tokenizer_hash": tokenizer_hash,
+        "context_limit": context_limit,
+    }
+
+
+def apply_runtime_probe(endpoint: JSONDict, probe: JSONDict) -> list[str]:
+    runtime = endpoint.setdefault("runtime", {})
+    updates: list[str] = []
+    for key in ["build", "model_ref", "model_hash", "tokenizer_hash", "context_limit"]:
+        value = probe.get(key)
+        if value is not None and runtime.get(key) != value:
+            runtime[key] = value
+            updates.append(key)
+    return updates
+
+
 def slot_action(
     endpoint: JSONDict,
     slot_id: int,
@@ -946,7 +1053,7 @@ def endpoint_doctor(args: argparse.Namespace) -> int:
     slot_api = endpoint.get("slot_api", {})
     slots_path = slot_api.get("slots_path", "/slots")
     configured_slot_field = str(slot_api.get("slot_field", "id_slot"))
-    url = endpoint["base_url"].rstrip("/") + slots_path
+    url = endpoint_url(endpoint["base_url"], slots_path)
     endpoint["checked_at"] = now_iso()
 
     try:
@@ -966,14 +1073,34 @@ def endpoint_doctor(args: argparse.Namespace) -> int:
     slot_count = slot_probe.get("slot_count")
     slot_save_restore = isinstance(slot_count, int) and slot_count > 0
     endpoint["capabilities"]["slot_save_restore"] = slot_save_restore
+    runtime_probe: JSONDict | None = None
+    runtime_updates: list[str] = []
+    if not args.skip_runtime_metadata:
+        metadata_url = endpoint_url(endpoint["base_url"], args.runtime_metadata_path)
+        try:
+            metadata, metadata_elapsed_ms = get_json(metadata_url, args.timeout)
+            runtime_probe = runtime_probe_report(metadata, metadata_url, metadata_elapsed_ms)
+            runtime_updates = apply_runtime_probe(endpoint, runtime_probe)
+        except Exception as exc:  # noqa: BLE001 - runtime metadata is helpful but non-fatal.
+            runtime_probe = {
+                "status": "runtime_probe_unavailable",
+                "metadata_url": metadata_url,
+                "error": str(exc),
+            }
     endpoint["doctor"] = {
         "slots_url": url,
         "client_duration_ms": elapsed_ms,
         "slot_count": slot_count,
         "slot_probe": slot_probe,
     }
+    if runtime_probe is not None:
+        endpoint["doctor"]["runtime_probe"] = runtime_probe
     write_json(store.endpoint_path(args.endpoint_id), endpoint)
     print(f"endpoint reachable: yes ({elapsed_ms} ms)")
+    if runtime_probe is not None:
+        print(f"runtime metadata: {runtime_probe['status']}")
+        if runtime_updates:
+            print(f"runtime fields updated: {', '.join(runtime_updates)}")
     if slot_count is not None:
         print(f"slots: {slot_count}")
         print(f"slots response shape: {slot_probe['response_shape']}")
@@ -1014,6 +1141,7 @@ def endpoint_matrix_report(store: Store) -> JSONDict:
         slot_api = endpoint.get("slot_api", {})
         doctor = endpoint.get("doctor", {})
         probe = doctor.get("slot_probe", {}) if isinstance(doctor, dict) else {}
+        runtime_probe = doctor.get("runtime_probe", {}) if isinstance(doctor, dict) else {}
         if not isinstance(runtime, dict):
             runtime = {}
         if not isinstance(capabilities, dict):
@@ -1022,6 +1150,8 @@ def endpoint_matrix_report(store: Store) -> JSONDict:
             slot_api = {}
         if not isinstance(probe, dict):
             probe = {}
+        if not isinstance(runtime_probe, dict):
+            runtime_probe = {}
         slot_probe = {
             "status": slot_probe_status(endpoint),
             "response_shape": probe.get("response_shape"),
@@ -1066,6 +1196,12 @@ def endpoint_matrix_report(store: Store) -> JSONDict:
                 "doctor": {
                     "slots_url": doctor.get("slots_url") if isinstance(doctor, dict) else None,
                     "client_duration_ms": doctor.get("client_duration_ms") if isinstance(doctor, dict) else None,
+                    "runtime_probe": {
+                        "status": runtime_probe.get("status"),
+                        "metadata_url": runtime_probe.get("metadata_url"),
+                        "response_shape": runtime_probe.get("response_shape"),
+                        "observed_fields": runtime_probe.get("observed_fields", []),
+                    },
                 },
                 "slot_probe": slot_probe,
             }
@@ -1106,6 +1242,7 @@ def endpoint_matrix(args: argparse.Namespace) -> int:
                     f"type={endpoint.get('type')}",
                     f"model={runtime.get('model_ref')}",
                     f"build={runtime.get('build')}",
+                    f"runtime_probe={endpoint.get('doctor', {}).get('runtime_probe', {}).get('status')}",
                     f"status={probe.get('status')}",
                     f"slots={probe.get('slot_count')}",
                     f"shape={probe.get('response_shape')}",
@@ -4664,6 +4801,8 @@ def build_parser() -> argparse.ArgumentParser:
     doctor = endpoint_sub.add_parser("doctor")
     doctor.add_argument("endpoint_id")
     doctor.add_argument("--timeout", type=float, default=2.0)
+    doctor.add_argument("--runtime-metadata-path", default="/props", help="Best-effort endpoint metadata path to probe for runtime build/model/context fields.")
+    doctor.add_argument("--skip-runtime-metadata", action="store_true", help="Skip the non-fatal runtime metadata probe.")
     doctor.add_argument("--strict", action="store_true")
     doctor.set_defaults(func=endpoint_doctor)
 

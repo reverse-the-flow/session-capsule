@@ -66,6 +66,8 @@ def main() -> None:
     endpoint = run_cli("help", "endpoint")
     if "endpoint matrix" not in endpoint or "--json" not in endpoint:
         raise AssertionError("endpoint help did not include slot compatibility matrix command")
+    if "--runtime-metadata-path" not in endpoint or "runtime build/model/context" not in endpoint:
+        raise AssertionError("endpoint help did not include runtime metadata probe controls")
 
     gateway = run_cli("help", "gateway")
     if "http://127.0.0.1:8765/v1" not in gateway:

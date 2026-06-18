@@ -40,6 +40,19 @@
       "n_ctx_values": [8192],
       "has_is_processing": true,
       "is_processing_values": [false]
+    },
+    "runtime_probe": {
+      "status": "runtime_probe_ok",
+      "metadata_url": "http://localhost:8080/props",
+      "client_duration_ms": 2.1,
+      "response_shape": "object",
+      "sample_keys": ["build_info", "model_path", "n_ctx"],
+      "observed_fields": ["build", "context_limit", "model_ref"],
+      "build": "server-cuda-example",
+      "model_ref": "mistral-nemo:12b",
+      "model_hash": null,
+      "tokenizer_hash": null,
+      "context_limit": 8192
     }
   },
   "checked_at": "2026-06-16T16:45:00-05:00",

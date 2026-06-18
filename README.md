@@ -148,7 +148,7 @@ py -3 .\scripts\capsule_cli.py resume --thread research-loop-small --slot 1 --ap
 py -3 .\scripts\capsule_cli.py shutdown --thread research-loop-small --slot 1 --force
 ```
 
-`endpoint doctor` records `/slots` probe evidence in the endpoint record: response shape, sample keys, candidate slot identity fields, configured chat slot field, and visible `n_ctx` / `is_processing` fields. `endpoint matrix --json` aggregates those endpoint records into a compatibility report that Model Plane or a launcher can read before enabling hard capsule controls.
+`endpoint doctor` records `/slots` probe evidence in the endpoint record: response shape, sample keys, candidate slot identity fields, configured chat slot field, and visible `n_ctx` / `is_processing` fields. It also performs a non-fatal runtime metadata probe, defaulting to `/props`, to capture live build/model/context fields when the endpoint exposes them. `endpoint matrix --json` aggregates those endpoint records into a compatibility report that Model Plane or a launcher can read before enabling hard capsule controls.
 
 If the model server runs in Docker, pass `--runtime-filename` when saving hard checkpoints so the filename is visible from inside the container's `--slot-save-path` mount.
 

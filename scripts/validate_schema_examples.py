@@ -173,6 +173,21 @@ def validate_endpoint(data: dict[str, Any]) -> None:
                 "endpoint.doctor.slot_probe.configured_slot_field_seen_in_slots",
                 probe["configured_slot_field_seen_in_slots"],
             )
+        runtime_probe = doctor.get("runtime_probe")
+        if runtime_probe is not None:
+            if not isinstance(runtime_probe, dict):
+                raise ValidationError("endpoint.doctor.runtime_probe must be an object")
+            require_keys("endpoint.doctor.runtime_probe", runtime_probe, ["status", "metadata_url", "observed_fields"])
+            if runtime_probe["status"] not in {"runtime_probe_ok", "runtime_probe_unavailable"}:
+                raise ValidationError("endpoint.doctor.runtime_probe.status is not supported")
+            if not isinstance(runtime_probe["metadata_url"], str) or not runtime_probe["metadata_url"]:
+                raise ValidationError("endpoint.doctor.runtime_probe.metadata_url must be a non-empty string")
+            if not isinstance(runtime_probe["observed_fields"], list):
+                raise ValidationError("endpoint.doctor.runtime_probe.observed_fields must be a list")
+            allowed = {"build", "model_ref", "model_hash", "tokenizer_hash", "context_limit"}
+            unknown = sorted(set(runtime_probe["observed_fields"]) - allowed)
+            if unknown:
+                raise ValidationError(f"endpoint.doctor.runtime_probe.observed_fields has unknown values: {unknown}")
             require_bool("endpoint.doctor.slot_probe.has_n_ctx", probe["has_n_ctx"])
             require_bool("endpoint.doctor.slot_probe.has_is_processing", probe["has_is_processing"])
 
