@@ -266,6 +266,7 @@ Render a Model Plane gateway launch profile:
 
 ```powershell
 py -3 .\scripts\capsule_cli.py gateway command .\examples\model-plane\gateway-launch-profile.example.json --json
+py -3 .\scripts\capsule_cli.py gateway check .\examples\model-plane\gateway-launch-profile.example.json --json
 ```
 
 Gateway upload/download can also be driven by Model Plane job packets:

@@ -168,9 +168,12 @@ Render the profile into gateway launch arguments:
 
 ```powershell
 py -3 .\scripts\capsule_cli.py gateway command .\examples\model-plane\gateway-launch-profile.example.json --json
+py -3 .\scripts\capsule_cli.py gateway check .\examples\model-plane\gateway-launch-profile.example.json --json
 ```
 
-After launch, Model Plane should read `transport.status_url` and require the response's versioned `transport` object before enabling `.scap` upload/download controls.
+After launch, Model Plane should run the profile check. It reads `transport.status_url`, authenticates from `security.request_auth`, and requires the response's versioned `transport` object before enabling `.scap` upload/download controls.
+
+For `gateway check`, relative file secret references are resolved from the profile directory.
 
 ## Endpoint Records
 

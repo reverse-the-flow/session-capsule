@@ -249,7 +249,10 @@ Render a gateway launch command:
 
 ```powershell
 py -3 .\scripts\capsule_cli.py gateway command .\examples\model-plane\gateway-launch-profile.example.json --json
+py -3 .\scripts\capsule_cli.py gateway check .\examples\model-plane\gateway-launch-profile.example.json --json
 ```
+
+For `gateway check`, relative file secret references are resolved from the profile directory.
 
 Supported job packet types:
 

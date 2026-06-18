@@ -542,8 +542,9 @@ Initial status:
 - `schemas/model-plane-gateway-launch.schema.json` defines the first launch-profile contract.
 - `examples/model-plane/gateway-launch-profile.example.json` shows a local `llama.cpp` hard-checkpoint gateway profile.
 - `capsule_cli.py gateway command PROFILE --json` renders a launch profile into concrete `capsule_gateway.py` arguments plus the OpenAI base URL and status URL.
+- `capsule_cli.py gateway check PROFILE --json` calls the profile status URL, authenticates from the profile's request-auth reference, and verifies the live gateway status/transport contract.
 - `scripts/validate_schema_examples.py` validates launch profiles separately from job packets.
-- `scripts/test_capsule_cli_model_plane_jobs.py` verifies launch-profile command rendering and rejects inline secret values.
+- `scripts/test_capsule_cli_model_plane_jobs.py` verifies launch-profile command rendering, authenticated status checking, and inline secret-value rejection.
 - `docs/model-plane.md` and `docs/configuration.md` explain how Model Plane maps the profile to gateway launch flags and status discovery.
 
 ## First Three Implementation Tickets

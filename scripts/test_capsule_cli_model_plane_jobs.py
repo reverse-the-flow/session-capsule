@@ -208,6 +208,51 @@ def main() -> None:
         gateway_thread.start()
         gateway_url = f"http://127.0.0.1:{gateway.server_port}"
         try:
+            status_profile = jobs / "gateway-status-profile.json"
+            status_profile.write_text(
+                json.dumps(
+                    {
+                        "schema_version": "0.1",
+                        "profile_id": "status-check-profile",
+                        "profile_type": "session_capsule_gateway",
+                        "created_at": "2026-06-18T12:00:00-05:00",
+                        "gateway": {
+                            "state_dir": str(state),
+                            "endpoint_id": "local-soft",
+                            "host": "127.0.0.1",
+                            "port": gateway.server_port,
+                            "checkpoint_mode": "soft",
+                            "slot": 0,
+                            "timeout_seconds": 20,
+                            "max_bundle_bytes": "10000000B",
+                        },
+                        "transport": {
+                            "openai_base_url": f"{gateway_url}/v1",
+                            "status_url": f"{gateway_url}/api/capsules/status",
+                            "require_status_transport": True,
+                        },
+                        "security": {
+                            "request_auth": {"source": "file", "ref": str(gateway_token)},
+                            "bundle_signing": {
+                                "source": "none",
+                                "ref": None,
+                                "key_id": None,
+                                "require_on_import": False,
+                            },
+                        },
+                    },
+                    indent=2,
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            profile_status = run_cli(state, "gateway", "check", str(status_profile), "--json")
+            profile_status_payload = json.loads(profile_status.stdout)
+            if profile_status_payload.get("transport_verified") is not True:
+                raise AssertionError("gateway profile status check did not verify transport")
+            if profile_status_payload.get("endpoint_id") != "local-soft":
+                raise AssertionError("gateway profile status check did not report expected endpoint")
+
             gateway_export_job = jobs / "gateway-export.json"
             write_job(
                 gateway_export_job,

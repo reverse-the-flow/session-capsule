@@ -343,6 +343,9 @@ Gateway launch profile:
 Render a launch command:
   py -3 .\\scripts\\capsule_cli.py gateway command .\\examples\\model-plane\\gateway-launch-profile.example.json --json
 
+Check a launched gateway:
+  py -3 .\\scripts\\capsule_cli.py gateway check .\\examples\\model-plane\\gateway-launch-profile.example.json --json
+
 Gateway health endpoint for launch profiles:
   /api/capsules/status
 
@@ -2629,6 +2632,137 @@ def render_gateway_command(args: argparse.Namespace) -> int:
     return 0
 
 
+def resolve_profile_ref(profile_dir: Path, ref: str) -> Path:
+    path = Path(ref)
+    if path.is_absolute():
+        return path
+    return profile_dir / path
+
+
+def read_profile_secret_token(name: str, secret_ref: JSONDict, profile_dir: Path) -> str | None:
+    source = secret_ref.get("source")
+    ref = secret_ref.get("ref")
+    if source == "none":
+        if ref is not None:
+            raise RuntimeError(f"{name}.ref must be null when source is none")
+        return None
+    if source == "file":
+        if not isinstance(ref, str) or not ref:
+            raise RuntimeError(f"{name}.ref must be a non-empty file path")
+        token = resolve_profile_ref(profile_dir, ref).read_text(encoding="utf-8").strip()
+    elif source == "env":
+        if not isinstance(ref, str) or not ref:
+            raise RuntimeError(f"{name}.ref must be a non-empty environment variable name")
+        token = os.environ.get(ref, "").strip()
+    else:
+        raise RuntimeError(f"{name}.source must be none, file, or env")
+    if not token:
+        raise RuntimeError(f"{name} resolved to an empty token")
+    return token
+
+
+def gateway_profile_auth_headers(profile: JSONDict, profile_dir: Path) -> dict[str, str]:
+    security = require_profile_section(profile, "security")
+    request_auth = security.get("request_auth")
+    if not isinstance(request_auth, dict):
+        raise RuntimeError("Gateway launch profile security.request_auth must be an object")
+    token = read_profile_secret_token("security.request_auth", request_auth, profile_dir)
+    if token is None:
+        return {}
+    return {"Authorization": f"Bearer {token}"}
+
+
+def verify_gateway_status_contract(profile: JSONDict, status: JSONDict) -> JSONDict:
+    gateway = require_profile_section(profile, "gateway")
+    transport = require_profile_section(profile, "transport")
+    security = require_profile_section(profile, "security")
+    request_auth = security.get("request_auth")
+    bundle_signing = security.get("bundle_signing")
+    if not isinstance(request_auth, dict):
+        raise RuntimeError("Gateway launch profile security.request_auth must be an object")
+    if not isinstance(bundle_signing, dict):
+        raise RuntimeError("Gateway launch profile security.bundle_signing must be an object")
+
+    expected_auth_required = request_auth.get("source") != "none"
+    expected_signing = bundle_signing.get("source") != "none"
+    expected_upload_bytes = parse_bytes(str(gateway["max_bundle_bytes"]))
+
+    mismatches: list[str] = []
+    checks = {
+        "status_ok": status.get("status") == "ok",
+        "endpoint_id": status.get("endpoint_id") == gateway.get("endpoint_id"),
+        "checkpoint_mode": status.get("checkpoint_mode") == gateway.get("checkpoint_mode"),
+        "auth_required": status.get("auth_required") == expected_auth_required,
+    }
+    for name, passed in checks.items():
+        if not passed:
+            mismatches.append(name)
+
+    transport_status = status.get("transport")
+    transport_verified = True
+    if transport.get("require_status_transport", False):
+        if not isinstance(transport_status, dict):
+            raise RuntimeError("Gateway status response did not include required transport object")
+        transport_checks = {
+            "transport.api_version": transport_status.get("api_version") == "0.1",
+            "transport.content_type": transport_status.get("bundle_content_type") == "application/vnd.session-capsule.scap",
+            "transport.max_upload_bytes": transport_status.get("max_upload_bytes") == expected_upload_bytes,
+            "transport.auth.required": transport_status.get("auth", {}).get("required") == expected_auth_required,
+            "transport.signing.exports_signed": transport_status.get("signing", {}).get("exports_signed") == expected_signing,
+            "transport.signing.required_on_import": transport_status.get("signing", {}).get("required_on_import")
+            == bool(bundle_signing.get("require_on_import", False)),
+        }
+        capabilities = transport_status.get("capabilities", {})
+        for capability in ["export", "list", "download", "raw_upload_import", "stored_bundle_import", "delete"]:
+            transport_checks[f"transport.capability.{capability}"] = capabilities.get(capability) is True
+        for name, passed in transport_checks.items():
+            if not passed:
+                mismatches.append(name)
+        transport_verified = not any(name.startswith("transport.") for name in mismatches)
+
+    if mismatches:
+        raise RuntimeError("Gateway status did not match launch profile: " + ", ".join(mismatches))
+
+    return {
+        "status": status.get("status"),
+        "endpoint_id": status.get("endpoint_id"),
+        "checkpoint_mode": status.get("checkpoint_mode"),
+        "auth_required": status.get("auth_required"),
+        "transport_verified": transport_verified,
+        "threads": status.get("threads"),
+        "bundles": status.get("bundles"),
+    }
+
+
+def check_gateway_profile(args: argparse.Namespace) -> int:
+    profile_path = args.profile.resolve()
+    profile = read_json(profile_path)
+    gateway_launch_args(profile)
+    transport = require_profile_section(profile, "transport")
+    gateway = require_profile_section(profile, "gateway")
+    status_url = str(transport["status_url"])
+    timeout = float(args.timeout if args.timeout is not None else gateway.get("timeout_seconds", 120.0))
+    status = gateway_request_json("GET", status_url, None, timeout, gateway_profile_auth_headers(profile, profile_path.parent))
+    summary = verify_gateway_status_contract(profile, status)
+    output = {
+        "profile_id": profile.get("profile_id"),
+        "profile": str(profile_path),
+        "status_url": status_url,
+        **summary,
+    }
+    if args.json:
+        print(json.dumps(output, indent=2) + "\n", end="")
+        return 0
+    print(f"profile: {output['profile_id']}")
+    print(f"status_url: {status_url}")
+    print(f"status: {output['status']}")
+    print(f"endpoint_id: {output['endpoint_id']}")
+    print(f"checkpoint_mode: {output['checkpoint_mode']}")
+    print(f"auth_required: {str(output['auth_required']).lower()}")
+    print(f"transport_verified: {str(output['transport_verified']).lower()}")
+    return 0
+
+
 def print_job_plan(packet: JSONDict) -> None:
     print(f"job: {packet['job_id']}")
     print(f"type: {packet['job_type']}")
@@ -3054,6 +3188,12 @@ def build_parser() -> argparse.ArgumentParser:
     gateway_command.add_argument("profile", type=Path)
     gateway_command.add_argument("--json", action="store_true", help="Print a machine-readable command payload.")
     gateway_command.set_defaults(func=render_gateway_command)
+
+    gateway_check = gateway_sub.add_parser("check", help="Check a running gateway against a Model Plane launch profile.")
+    gateway_check.add_argument("profile", type=Path)
+    gateway_check.add_argument("--json", action="store_true", help="Print a machine-readable status payload.")
+    gateway_check.add_argument("--timeout", type=float, help="Override gateway status request timeout.")
+    gateway_check.set_defaults(func=check_gateway_profile)
 
     config_cmd = subcommands.add_parser("config")
     config_sub = config_cmd.add_subparsers(dest="config_command", required=True)

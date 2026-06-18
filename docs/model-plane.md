@@ -94,7 +94,15 @@ Render the gateway command from a profile:
 py -3 .\scripts\capsule_cli.py gateway command .\examples\model-plane\gateway-launch-profile.example.json --json
 ```
 
-After Model Plane launches the gateway, it should call the profile's `transport.status_url` and require the status response to include a `transport` object before enabling bundle upload/download controls.
+After Model Plane launches the gateway, it should check the running process against the profile:
+
+```powershell
+py -3 .\scripts\capsule_cli.py gateway check .\examples\model-plane\gateway-launch-profile.example.json --json
+```
+
+That check calls the profile's `transport.status_url`, authenticates from `security.request_auth`, and verifies that the status response matches the profile and includes the required `transport` object before upload/download controls are enabled.
+
+For `gateway check`, relative file secret references are resolved from the profile directory. The profile still stores only references, not token or key values.
 
 For UI-driven `.scap` transfer, Model Plane should call the gateway bundle endpoints instead of reimplementing the archive format:
 
