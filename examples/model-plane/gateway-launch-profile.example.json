@@ -17,7 +17,8 @@
     "default_prefill": "user_default",
     "default_thread_prefix": "gateway",
     "timeout_seconds": 120,
-    "max_bundle_bytes": "5GB"
+    "max_bundle_bytes": "5GB",
+    "cors_allow_origin": "http://127.0.0.1:3000"
   },
   "transport": {
     "openai_base_url": "http://127.0.0.1:8765/v1",
@@ -39,6 +40,7 @@
   "notes": [
     "This is a Model Plane launch profile, not a job packet.",
     "The profile carries secret references only. It must not contain the gateway token or signing key value.",
+    "Set gateway.cors_allow_origin to the exact browser origin of the Model Plane UI, or null for non-browser/CLI-only use.",
     "After launch, Model Plane should read transport.status_url and require the response transport object before enabling upload/download controls."
   ]
 }

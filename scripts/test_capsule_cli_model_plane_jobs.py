@@ -88,6 +88,8 @@ def main() -> None:
             raise AssertionError("gateway launch profile did not render signing key reference")
         if "--require-bundle-signature" not in command_args:
             raise AssertionError("gateway launch profile did not render required signature flag")
+        if "--cors-allow-origin" not in command_args or "http://127.0.0.1:3000" not in command_args:
+            raise AssertionError("gateway launch profile did not render CORS origin")
         if launch_payload["status_url"] != "http://127.0.0.1:8765/api/capsules/status":
             raise AssertionError("gateway launch profile did not expose expected status URL")
 
@@ -202,6 +204,7 @@ def main() -> None:
             require_bundle_signature=False,
             auth_token="job-gateway-token",
             lock=threading.Lock(),
+            cors_allow_origin="http://127.0.0.1:3000",
         )
         gateway = capsule_gateway.create_server(config)
         gateway_thread = threading.Thread(target=gateway.serve_forever, daemon=True)
@@ -225,6 +228,7 @@ def main() -> None:
                             "slot": 0,
                             "timeout_seconds": 20,
                             "max_bundle_bytes": "10000000B",
+                            "cors_allow_origin": "http://127.0.0.1:3000",
                         },
                         "transport": {
                             "openai_base_url": f"{gateway_url}/v1",

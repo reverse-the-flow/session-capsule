@@ -83,6 +83,7 @@ The launch profile describes:
 
 - gateway state directory, endpoint id, host, port, checkpoint mode, slot, timeout, and max bundle upload size
 - OpenAI-compatible base URL and status URL
+- optional browser origin allowed to call gateway upload/download endpoints
 - request-auth and bundle-signing secret references
 - whether import requires signed bundles
 
@@ -114,6 +115,8 @@ POST   /api/capsules/import
 ```
 
 Model Plane should read `/api/capsules/status` first and use its `transport` object as the runtime contract. It advertises the API version, max raw upload bytes, `.scap` content type, endpoint paths, auth requirement, signing policy, and upload/download capabilities for the specific gateway instance that was launched.
+
+If Model Plane's upload/download controls run in a browser, the launch profile should set `gateway.cors_allow_origin` to that UI's exact origin. The status response then advertises `transport.cors`; Model Plane should require it before enabling direct browser `.scap` transfer controls.
 
 The same status response includes `identity`, which advertises preferred `X-Capsule-*` headers plus recognized Open WebUI and opencode thread headers. Model Plane should use that object when deciding which UI/session id to bind to `X-Capsule-Thread`.
 

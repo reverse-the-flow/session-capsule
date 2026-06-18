@@ -192,6 +192,12 @@ If the gateway is bound beyond local-only use, require a request token:
 py -3 .\scripts\capsule_gateway.py --state-dir .\.capsules --endpoint local-llamacpp --auth-token-file .\capsule-gateway-token
 ```
 
+If browser-hosted Model Plane controls call upload/download directly, allow that exact UI origin:
+
+```powershell
+py -3 .\scripts\capsule_gateway.py --state-dir .\.capsules --endpoint local-llamacpp --cors-allow-origin http://127.0.0.1:3000
+```
+
 Inspect and clean local hard capsule storage:
 
 ```powershell
@@ -252,7 +258,7 @@ POST   /api/capsules/import
 DELETE /api/capsules/bundles/{bundle_id}
 ```
 
-Model Plane should read `/api/capsules/status` first and use the response's `transport` object to discover endpoint paths, upload size, content type, auth policy, signing policy, and enabled bundle capabilities.
+Model Plane should read `/api/capsules/status` first and use the response's `transport` object to discover endpoint paths, upload size, content type, auth policy, signing policy, CORS policy, and enabled bundle capabilities.
 
 Bundles are stored under `.capsules/bundles/`. Export defaults to ledger-only; hard snapshots require `include_snapshots=true`.
 

@@ -132,6 +132,7 @@ These should stay as launch-time values because they describe the current proces
 | `--require-bundle-signature` | flag | Requires gateway imports to verify with the configured signing key. |
 | `--auth-token-file` | `.capsule-gateway-token` | Optional gateway request token file. |
 | `--auth-token-env` | `CAPSULE_GATEWAY_TOKEN` | Optional gateway request token environment variable. |
+| `--cors-allow-origin` | `http://127.0.0.1:3000` | Optional browser origin allowed to call gateway APIs. |
 
 ## Secret Inputs
 
@@ -173,6 +174,7 @@ The profile maps to the gateway launch flags above:
 | `gateway.default_prefill` | `--default-prefill` |
 | `gateway.timeout_seconds` | `--timeout` |
 | `gateway.max_bundle_bytes` | `--max-bundle-bytes` |
+| `gateway.cors_allow_origin` | `--cors-allow-origin` |
 | `security.request_auth` | `--auth-token-file` or `--auth-token-env` |
 | `security.bundle_signing` | `--signature-key-file`, `--signature-key-env`, `--signature-key-id`, and `--require-bundle-signature` |
 
@@ -185,7 +187,7 @@ py -3 .\scripts\capsule_cli.py gateway command .\examples\model-plane\gateway-la
 py -3 .\scripts\capsule_cli.py gateway check .\examples\model-plane\gateway-launch-profile.example.json --json
 ```
 
-After launch, Model Plane should run the profile check. It reads `transport.status_url`, authenticates from `security.request_auth`, and requires the response's versioned `transport` object before enabling `.scap` upload/download controls.
+After launch, Model Plane should run the profile check. It reads `transport.status_url`, authenticates from `security.request_auth`, and requires the response's versioned `transport` object before enabling `.scap` upload/download controls. If Model Plane's UI is browser-hosted, set `gateway.cors_allow_origin` to the exact UI origin and require the status response's `transport.cors.enabled` to be true before enabling direct browser upload/download.
 
 For `gateway check`, relative file secret references are resolved from the profile directory.
 
@@ -208,17 +210,20 @@ They include:
 - context limit
 - slot API fields
 
-## Snapshot References
+## State References
 
-Hard local snapshot manifests use two different references:
+Ledger and manifest files use paths relative to the selected capsule state directory:
 
 | Field | Meaning |
 | --- | --- |
-| `storage.snapshot_ref` | Capsule-state-relative file path such as `threads/THREAD/snapshots/CAPSULE.bin`. |
+| `thread.transcript_ref` | `threads/THREAD/transcript.jsonl` |
+| `thread.capsules[].manifest_ref` | `threads/THREAD/manifests/CAPSULE.json` or `prefills/NAME/VERSION/manifest.json` |
+| `prefill_source.source_ref` | `prefills/NAME/VERSION/source.md` |
+| `storage.snapshot_ref` | `threads/THREAD/snapshots/CAPSULE.bin` |
 | `storage.runtime_snapshot_ref` | Runtime-visible slot save/restore filename, which may be absolute or server-specific. |
 | `storage.snapshot_digest` | Content digest metadata for verification and indexing. |
 
-For v0, hard snapshot files are stored under the capsule state directory and referenced by store-relative path. They are not addressed by digest path yet. The digest is metadata, and missing snapshots still fall back to transcript replay.
+State-relative refs must not include `.capsules/` because `.capsules` is only the default root, not part of the portable reference. For v0, hard snapshot files are not addressed by digest path yet. The digest is metadata, and missing snapshots still fall back to transcript replay.
 
 ## Help Surface
 

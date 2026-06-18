@@ -6,12 +6,12 @@
   "updated_at": "2026-06-16T16:45:00-05:00",
   "endpoint_id": "local-llamacpp",
   "workspace_ref": "X:/Experiments/session-capsules",
-  "transcript_ref": ".capsules/threads/thread_research_loop_small/transcript.jsonl",
+  "transcript_ref": "threads/thread_research_loop_small/transcript.jsonl",
   "active_capsule_id": "cap_004",
   "capsules": [
     {
-      "capsule_id": "prefill_user_default_v1",
-      "manifest_ref": ".capsules/prefills/user_default_v1/manifest.json",
+      "capsule_id": "prefill_user_default_v001",
+      "manifest_ref": "prefills/user_default/v001/manifest.json",
       "kind": "user_prefill",
       "parent_capsule_id": null,
       "token_start": 0,
@@ -21,9 +21,9 @@
     },
     {
       "capsule_id": "cap_003",
-      "manifest_ref": ".capsules/threads/thread_research_loop_small/manifests/cap_003.json",
+      "manifest_ref": "threads/thread_research_loop_small/manifests/cap_003.json",
       "kind": "thread_checkpoint",
-      "parent_capsule_id": "prefill_user_default_v1",
+      "parent_capsule_id": "prefill_user_default_v001",
       "token_start": 0,
       "token_end": 2700,
       "endpoint_id": "local-llamacpp",
@@ -31,7 +31,7 @@
     },
     {
       "capsule_id": "cap_004",
-      "manifest_ref": ".capsules/threads/thread_research_loop_small/manifests/cap_004.json",
+      "manifest_ref": "threads/thread_research_loop_small/manifests/cap_004.json",
       "kind": "thread_checkpoint",
       "parent_capsule_id": "cap_003",
       "token_start": 0,
@@ -45,7 +45,7 @@
       "after_capsule_id": "cap_004",
       "token_start": 3900,
       "token_end": 4150,
-      "transcript_ref": ".capsules/threads/thread_research_loop_small/transcript.jsonl"
+      "transcript_ref": "threads/thread_research_loop_small/transcript.jsonl"
     }
   ],
   "fallback": {

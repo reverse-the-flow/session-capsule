@@ -94,6 +94,10 @@
         },
         "max_bundle_bytes": {
           "type": "string"
+        },
+        "cors_allow_origin": {
+          "type": ["string", "null"],
+          "description": "Optional browser origin allowed to call gateway APIs, or * for local development."
         }
       }
     },

@@ -143,7 +143,8 @@
           "type": "string"
         },
         "source_ref": {
-          "type": "string"
+          "type": "string",
+          "description": "Path relative to the capsule state directory. Do not include the .capsules prefix."
         },
         "source_digest": {
           "type": "string"

@@ -41,6 +41,21 @@ def require_bool(name: str, value: Any) -> None:
         raise ValidationError(f"{name} must be a boolean")
 
 
+def require_state_relative_ref(name: str, value: Any, allow_null: bool = False) -> None:
+    if value is None and allow_null:
+        return
+    if not isinstance(value, str) or not value:
+        expected = "a non-empty string or null" if allow_null else "a non-empty string"
+        raise ValidationError(f"{name} must be {expected}")
+    normalized = value.replace("\\", "/")
+    if normalized.startswith("/") or re.match(r"^[A-Za-z]:/", normalized):
+        raise ValidationError(f"{name} must be relative to the capsule state directory")
+    if normalized.startswith(".capsules/"):
+        raise ValidationError(f"{name} must not include the .capsules state directory prefix")
+    if normalized.startswith("../") or "/../" in normalized:
+        raise ValidationError(f"{name} must not escape the capsule state directory")
+
+
 def validate_schema_files() -> None:
     expected = [
         "capsule-manifest.schema.json",
@@ -166,17 +181,12 @@ def validate_capsule(data: dict[str, Any], endpoint: dict[str, Any]) -> None:
     storage = data.get("storage", {})
     if not isinstance(storage, dict):
         raise ValidationError("capsule.storage must be an object")
-    snapshot_ref = storage.get("snapshot_ref")
-    if snapshot_ref is not None:
-        if not isinstance(snapshot_ref, str) or not snapshot_ref:
-            raise ValidationError("capsule.storage.snapshot_ref must be a non-empty string or null")
-        normalized = snapshot_ref.replace("\\", "/")
-        if normalized.startswith("/") or re.match(r"^[A-Za-z]:/", normalized):
-            raise ValidationError("capsule.storage.snapshot_ref must be relative to the capsule state directory")
-        if normalized.startswith(".capsules/"):
-            raise ValidationError("capsule.storage.snapshot_ref must not include the .capsules state directory prefix")
-        if normalized.startswith("../") or "/../" in normalized:
-            raise ValidationError("capsule.storage.snapshot_ref must not escape the capsule state directory")
+    require_state_relative_ref("capsule.storage.snapshot_ref", storage.get("snapshot_ref"), allow_null=True)
+    if "prefill_source" in data:
+        prefill_source = data["prefill_source"]
+        if not isinstance(prefill_source, dict):
+            raise ValidationError("capsule.prefill_source must be an object")
+        require_state_relative_ref("capsule.prefill_source.source_ref", prefill_source.get("source_ref"))
 
 
 def validate_thread(data: dict[str, Any], capsule: dict[str, Any], endpoint: dict[str, Any]) -> None:
@@ -201,6 +211,7 @@ def validate_thread(data: dict[str, Any], capsule: dict[str, Any], endpoint: dic
         raise ValidationError("thread endpoint_id must match endpoint example")
     if data["thread_id"] != capsule["thread_id"]:
         raise ValidationError("thread_id must match capsule example")
+    require_state_relative_ref("thread.transcript_ref", data["transcript_ref"])
 
     capsule_ids = {item["capsule_id"] for item in data["capsules"]}
     active = data["active_capsule_id"]
@@ -211,11 +222,14 @@ def validate_thread(data: dict[str, Any], capsule: dict[str, Any], endpoint: dic
 
     by_id = {item["capsule_id"]: item for item in data["capsules"]}
     for item in data["capsules"]:
+        require_state_relative_ref("thread.capsules[].manifest_ref", item["manifest_ref"])
         parent = item["parent_capsule_id"]
         if parent is not None and parent not in by_id:
             raise ValidationError(f"capsule {item['capsule_id']} references missing parent {parent}")
         if item["token_end"] < item["token_start"]:
             raise ValidationError(f"capsule {item['capsule_id']} has invalid token range")
+    for item in data.get("open_diffs", []):
+        require_state_relative_ref("thread.open_diffs[].transcript_ref", item["transcript_ref"])
 
     fallback = data["fallback"]
     require_keys("thread.fallback", fallback, ["mode", "replay_start_token", "reason"])
@@ -392,6 +406,9 @@ def validate_gateway_launch_profile(path: Path) -> None:
     require_nonnegative_number(f"{name}.gateway.timeout_seconds", gateway["timeout_seconds"])
     if not isinstance(gateway["max_bundle_bytes"], str) or not re.fullmatch(r"\d+(\.\d+)?\s*([KMGT]i?B|[KMGT]B|B)?", gateway["max_bundle_bytes"]):
         raise ValidationError(f"{name}.gateway.max_bundle_bytes must be a byte size string")
+    if gateway.get("cors_allow_origin") is not None:
+        if not isinstance(gateway["cors_allow_origin"], str) or not gateway["cors_allow_origin"]:
+            raise ValidationError(f"{name}.gateway.cors_allow_origin must be a non-empty string or null")
 
     transport = data["transport"]
     if not isinstance(transport, dict):

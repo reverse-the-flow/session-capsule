@@ -118,6 +118,7 @@ Launch flags should describe the current process:
 - `--max-bundle-bytes`
 - `--auth-token-file`
 - `--auth-token-env`
+- `--cors-allow-origin`
 
 These are good Model Plane launch-profile fields.
 
@@ -195,6 +196,8 @@ DELETE /api/capsules/bundles/{bundle_id}
 
 Model Plane should read `/api/capsules/status` first. The response includes a versioned `transport` object with endpoint paths, `max_upload_bytes`, content type, auth policy, signing policy, and advertised upload/download capabilities.
 
+Browser-hosted Model Plane UIs should launch the gateway with `--cors-allow-origin` set to the exact UI origin and require `transport.cors.enabled` before enabling direct browser upload/download controls.
+
 Bundles live under:
 
 ```text
@@ -207,6 +210,12 @@ Raw uploads are capped by the gateway launch flag:
 
 ```powershell
 py -3 .\scripts\capsule_gateway.py --state-dir .\.capsules --endpoint local-llamacpp --max-bundle-bytes 5GB
+```
+
+Browser preflight is also a launch flag:
+
+```powershell
+py -3 .\scripts\capsule_gateway.py --state-dir .\.capsules --endpoint local-llamacpp --cors-allow-origin http://127.0.0.1:3000
 ```
 
 Gateway bundle signing is also launch policy:

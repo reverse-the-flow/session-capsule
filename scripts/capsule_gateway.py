@@ -51,6 +51,37 @@ WORKSPACE_HEADER_CANDIDATES = [
     "X-Workspace-Id",
 ]
 
+CORS_ALLOW_METHODS = "GET, POST, DELETE, OPTIONS"
+CORS_ALLOW_HEADERS = ", ".join(
+    [
+        "Authorization",
+        "Content-Type",
+        "X-Capsule-Gateway-Key",
+        "X-Capsule-Thread",
+        "X-Capsule-Workspace",
+        "X-Capsule-Prefill",
+        "X-Capsule-Bundle-Id",
+        "X-Capsule-Import-Force",
+        "X-OpenWebUI-Chat-Id",
+        "X-OpenWebUI-User-Id",
+        "X-Opencode-Thread",
+        "X-Opencode-Session",
+        "X-Opencode-Workspace",
+    ]
+)
+CORS_EXPOSE_HEADERS = ", ".join(
+    [
+        "Content-Disposition",
+        "X-Capsule-Bundle-Id",
+        "X-Capsule-Bundle-SHA256",
+        "X-Capsule-Thread",
+        "X-Capsule-Mode",
+        "X-Capsule-Checkpoint",
+        "X-Capsule-Export",
+        "X-Capsule-Import",
+    ]
+)
+
 
 @dataclass
 class GatewayConfig:
@@ -70,6 +101,7 @@ class GatewayConfig:
     require_bundle_signature: bool
     auth_token: str | None
     lock: threading.Lock
+    cors_allow_origin: str | None = None
 
 
 def json_bytes(payload: Any) -> bytes:
@@ -142,6 +174,8 @@ def send_json(handler: BaseHTTPRequestHandler, payload: Any, status: int = 200, 
     handler.send_response(status)
     handler.send_header("Content-Type", "application/json")
     handler.send_header("Content-Length", str(len(body)))
+    for key, value in getattr(handler, "_capsule_cors_headers", {}).items():
+        handler.send_header(key, value)
     if headers:
         for key, value in headers.items():
             handler.send_header(key, value)
@@ -159,6 +193,8 @@ def send_bytes(
     handler.send_response(status)
     handler.send_header("Content-Type", content_type)
     handler.send_header("Content-Length", str(len(body)))
+    for key, value in getattr(handler, "_capsule_cors_headers", {}).items():
+        handler.send_header(key, value)
     if headers:
         for key, value in headers.items():
             handler.send_header(key, value)
@@ -279,6 +315,31 @@ def list_bundles(config: GatewayConfig) -> list[JSONDict]:
     return [bundle_metadata(config, path) for path in sorted(bundles_dir(config).glob("*.scap"))]
 
 
+def cors_response_headers(handler: BaseHTTPRequestHandler, config: GatewayConfig) -> dict[str, str]:
+    if not config.cors_allow_origin:
+        return {}
+    origin = handler.headers.get("Origin")
+    if config.cors_allow_origin == "*":
+        allowed_origin = "*"
+    elif origin is None:
+        allowed_origin = config.cors_allow_origin
+    elif origin == config.cors_allow_origin:
+        allowed_origin = origin
+    else:
+        return {}
+
+    headers = {
+        "Access-Control-Allow-Origin": allowed_origin,
+        "Access-Control-Allow-Methods": CORS_ALLOW_METHODS,
+        "Access-Control-Allow-Headers": CORS_ALLOW_HEADERS,
+        "Access-Control-Expose-Headers": CORS_EXPOSE_HEADERS,
+        "Access-Control-Max-Age": "600",
+    }
+    if allowed_origin != "*":
+        headers["Vary"] = "Origin"
+    return headers
+
+
 def transport_contract(config: GatewayConfig) -> JSONDict:
     signing_enabled = bool(config.signature_key_file or config.signature_key_env)
     return {
@@ -315,6 +376,14 @@ def transport_contract(config: GatewayConfig) -> JSONDict:
         "auth": {
             "required": config.auth_token is not None,
             "accepted_headers": ["Authorization: Bearer TOKEN", "X-Capsule-Gateway-Key"],
+        },
+        "cors": {
+            "enabled": config.cors_allow_origin is not None,
+            "allow_origin": config.cors_allow_origin,
+            "preflight": config.cors_allow_origin is not None,
+            "allowed_methods": CORS_ALLOW_METHODS.split(", "),
+            "allowed_headers": CORS_ALLOW_HEADERS.split(", "),
+            "exposed_headers": CORS_EXPOSE_HEADERS.split(", "),
         },
         "signing": {
             "exports_signed": signing_enabled,
@@ -722,7 +791,18 @@ def make_handler(config: GatewayConfig) -> type[BaseHTTPRequestHandler]:
         def log_message(self, format: str, *args: Any) -> None:  # noqa: A002
             return
 
+        def prepare_response_headers(self) -> None:
+            self._capsule_cors_headers = cors_response_headers(self, config)
+
+        def do_OPTIONS(self) -> None:  # noqa: N802
+            self.prepare_response_headers()
+            if config.cors_allow_origin and self._capsule_cors_headers:
+                send_bytes(self, b"", 204, "text/plain")
+                return
+            send_json(self, {"error": {"message": "cors origin not allowed"}}, status=403)
+
         def do_GET(self) -> None:  # noqa: N802
+            self.prepare_response_headers()
             if not authorize_gateway_request(self, config):
                 return
             parsed = urlparse(self.path)
@@ -786,6 +866,7 @@ def make_handler(config: GatewayConfig) -> type[BaseHTTPRequestHandler]:
             send_json(self, {"error": {"message": "not found"}}, status=404)
 
         def do_POST(self) -> None:  # noqa: N802
+            self.prepare_response_headers()
             try:
                 if not authorize_gateway_request(self, config):
                     return
@@ -808,6 +889,7 @@ def make_handler(config: GatewayConfig) -> type[BaseHTTPRequestHandler]:
                 send_json(self, {"error": {"message": str(exc), "type": "gateway_error"}}, status=500)
 
         def do_DELETE(self) -> None:  # noqa: N802
+            self.prepare_response_headers()
             try:
                 if not authorize_gateway_request(self, config):
                     return
@@ -846,6 +928,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--require-bundle-signature", action="store_true", help="Require uploaded or stored bundles to verify with the configured signature key before import.")
     parser.add_argument("--auth-token-file", type=Path, help="Optional local token file required for every gateway request.")
     parser.add_argument("--auth-token-env", help="Optional environment variable containing the gateway auth token.")
+    parser.add_argument("--cors-allow-origin", help="Optional browser origin allowed to call gateway APIs, or * for local development.")
     return parser
 
 
@@ -876,6 +959,7 @@ def main() -> int:
             args.auth_token_env,
         ),
         lock=threading.Lock(),
+        cors_allow_origin=args.cors_allow_origin,
     )
     # Fail fast if endpoint is not configured.
     ensure_endpoint(config)

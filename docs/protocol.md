@@ -60,6 +60,21 @@ The capsule manifest describes one checkpoint. It tracks:
 
 The manifest answers: can this endpoint restore this checkpoint?
 
+### State References
+
+Ledger and manifest references are relative to the capsule state directory selected by `--state-dir`.
+
+Examples:
+
+```text
+threads/THREAD/transcript.jsonl
+threads/THREAD/manifests/CAPSULE.json
+prefills/NAME/VERSION/source.md
+threads/THREAD/snapshots/CAPSULE.bin
+```
+
+State refs must not be absolute and must not include the `.capsules/` prefix. This keeps ledgers and manifests portable when a project state directory moves or is imported from a `.scap` bundle.
+
 ### Snapshot References
 
 For v0 local hard capsules, `storage.snapshot_ref` is relative to the capsule state directory:
@@ -68,7 +83,7 @@ For v0 local hard capsules, `storage.snapshot_ref` is relative to the capsule st
 threads/THREAD/snapshots/CAPSULE.bin
 ```
 
-It must not be absolute and must not include the `.capsules/` prefix. This keeps manifests portable when a project state directory moves or is imported from a `.scap` bundle.
+It follows the same state-reference rule as ledger and manifest refs.
 
 `storage.runtime_snapshot_ref` is separate. It may be an absolute or server-visible path because some runtimes need the exact filename passed to their slot save/restore API.
 

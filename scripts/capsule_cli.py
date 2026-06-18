@@ -147,7 +147,7 @@ Commands:
   py -3 .\\scripts\\capsule_cli.py config set storage.max_bytes 50GB
 
 Launch-specific values stay as flags or Model Plane launch profile fields:
-  --state-dir, --host, --port, --endpoint, --slot, --checkpoint-mode, --timeout""",
+  --state-dir, --host, --port, --endpoint, --slot, --checkpoint-mode, --timeout, --cors-allow-origin""",
     "state": """Capsule state is project-local by default.
 
 Default state directory:
@@ -256,6 +256,7 @@ Endpoints:
   DELETE /api/capsules/bundles/{bundle_id}
 
 Model Plane should read /api/capsules/status first. The response includes a versioned transport object with endpoint paths, max_upload_bytes, content type, auth policy, signing policy, and advertised upload/download capabilities.
+Browser-hosted Model Plane UIs should launch the gateway with --cors-allow-origin set to the exact UI origin, then require transport.cors.enabled before enabling direct browser upload/download controls.
 
 Bundles are stored under:
   .capsules/bundles/
@@ -266,7 +267,10 @@ Raw upload content type:
   application/vnd.session-capsule.scap
 
 Upload size limit:
-  py -3 .\\scripts\\capsule_gateway.py --state-dir .\\.capsules --endpoint local-llamacpp --max-bundle-bytes 5GB""",
+  py -3 .\\scripts\\capsule_gateway.py --state-dir .\\.capsules --endpoint local-llamacpp --max-bundle-bytes 5GB
+
+Browser preflight:
+  py -3 .\\scripts\\capsule_gateway.py --state-dir .\\.capsules --endpoint local-llamacpp --cors-allow-origin http://127.0.0.1:3000""",
     "storage": """Hard snapshots can be large. They are managed cache artifacts unless pinned.
 
 Defaults:
@@ -2611,6 +2615,8 @@ def gateway_launch_args(profile: JSONDict) -> list[str]:
         launch.extend(["--default-prefill", str(gateway["default_prefill"])])
     if gateway.get("default_thread_prefix"):
         launch.extend(["--default-thread-prefix", str(gateway["default_thread_prefix"])])
+    if gateway.get("cors_allow_origin"):
+        launch.extend(["--cors-allow-origin", str(gateway["cors_allow_origin"])])
 
     security = require_profile_section(profile, "security")
     request_auth = security.get("request_auth")
@@ -2711,6 +2717,7 @@ def verify_gateway_status_contract(profile: JSONDict, status: JSONDict) -> JSOND
     expected_auth_required = request_auth.get("source") != "none"
     expected_signing = bundle_signing.get("source") != "none"
     expected_upload_bytes = parse_bytes(str(gateway["max_bundle_bytes"]))
+    expected_cors_origin = gateway.get("cors_allow_origin")
 
     mismatches: list[str] = []
     checks = {
@@ -2737,6 +2744,10 @@ def verify_gateway_status_contract(profile: JSONDict, status: JSONDict) -> JSOND
             "transport.signing.required_on_import": transport_status.get("signing", {}).get("required_on_import")
             == bool(bundle_signing.get("require_on_import", False)),
         }
+        cors_status = transport_status.get("cors", {})
+        if expected_cors_origin:
+            transport_checks["transport.cors.enabled"] = cors_status.get("enabled") is True
+            transport_checks["transport.cors.allow_origin"] = cors_status.get("allow_origin") == expected_cors_origin
         capabilities = transport_status.get("capabilities", {})
         for capability in ["export", "list", "download", "raw_upload_import", "stored_bundle_import", "delete"]:
             transport_checks[f"transport.capability.{capability}"] = capabilities.get(capability) is True

@@ -73,6 +73,11 @@ The response includes a versioned `transport` object:
       "required": true,
       "accepted_headers": ["Authorization: Bearer TOKEN", "X-Capsule-Gateway-Key"]
     },
+    "cors": {
+      "enabled": true,
+      "allow_origin": "http://127.0.0.1:3000",
+      "preflight": true
+    },
     "signing": {
       "exports_signed": true,
       "signature_key_id": "local",
@@ -107,6 +112,20 @@ The same response includes an `identity` object for thread continuity:
 ```
 
 These are runtime contracts for launchers and local UIs. The docs describe the same API, but the status payload tells Model Plane what this gateway instance actually started with.
+
+## Browser Access
+
+Browser-hosted Model Plane UIs need CORS preflight before they can call the local gateway directly for `.scap` upload/download.
+
+Enable one exact UI origin at gateway launch:
+
+```powershell
+py -3 .\scripts\capsule_gateway.py --state-dir .\.capsules --endpoint local-llamacpp --cors-allow-origin http://127.0.0.1:3000
+```
+
+The gateway then answers `OPTIONS` preflight for upload/download/control requests and exposes capsule download headers such as `X-Capsule-Bundle-Id` and `X-Capsule-Bundle-SHA256` to browser code.
+
+Use `*` only for local development where another auth and exposure boundary already exists. For normal Model Plane use, configure the exact origin and keep request auth enabled if the gateway is reachable beyond the local host.
 
 ## Export
 
@@ -243,6 +262,7 @@ Gateway owns:
 - max upload size enforcement
 - optional signing and required-signature verification as launch policy
 - optional request-token authentication as launch policy
+- optional browser CORS preflight as launch policy
 
 Model Plane owns:
 

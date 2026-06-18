@@ -17,7 +17,7 @@ It performs:
 - conceptual CLI help smoke test
 - state-location help and `state info` smoke test
 - fake `llama.cpp` hard capsule save/restore, shutdown job, and failed-restore fallback smoke test
-- store-relative hard snapshot reference smoke test
+- state-relative ledger, prefill, and hard snapshot reference smoke test
 - `.scap` export/import/verify, dry-run sizing, endpoint compatibility warning, signature, and tamper-rejection smoke test
 - storage config, pinning, stats, and GC smoke test
 - Model Plane job-packet smoke test, including launch-profile rendering/checking, shutdown planning, signed export jobs, and authenticated gateway transport job packets
@@ -52,8 +52,9 @@ The gateway integration contract is verified by fake-backend tests that exercise
 - hard restore plus diff forwarding
 - checkpoint after response
 - transport status discovery for Model Plane upload/download integration
+- gateway CORS preflight and exposed download headers for browser-hosted upload/download controls
 - identity status discovery for Open WebUI and opencode thread metadata
-- store-relative snapshot refs in hard checkpoint manifests
+- state-relative ledger, prefill, and snapshot refs in runtime-written files
 - `.scap` export, list, download, raw upload import, and bundle delete
 - authenticated gateway requests and transport job packets when a token is configured
 - Model Plane gateway launch-profile command rendering, authenticated status checking, and inline secret-value rejection

@@ -35,7 +35,7 @@
   "prefill_source": {
     "name": "user_default",
     "version": "v001",
-    "source_ref": ".capsules/prefills/user_default/v001/source.md",
+    "source_ref": "prefills/user_default/v001/source.md",
     "source_digest": "sha256-prefill-source-example"
   },
   "storage": {

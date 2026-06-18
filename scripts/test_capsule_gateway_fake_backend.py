@@ -148,6 +148,22 @@ def delete_json(url: str, headers: dict[str, str] | None = None) -> dict[str, An
         return json.loads(response.read().decode("utf-8"))
 
 
+def options_headers(url: str, origin: str, method: str, headers: str) -> dict[str, str]:
+    req = request.Request(
+        url,
+        headers={
+            "Origin": origin,
+            "Access-Control-Request-Method": method,
+            "Access-Control-Request-Headers": headers,
+        },
+        method="OPTIONS",
+    )
+    with request.urlopen(req, timeout=20) as response:
+        if response.status != 204:
+            raise AssertionError(f"expected preflight 204, got {response.status}")
+        return {key: value for key, value in response.headers.items()}
+
+
 def expect_unauthorized(url: str) -> None:
     try:
         request.urlopen(url, timeout=20)
@@ -216,6 +232,7 @@ def main() -> None:
                 require_bundle_signature=False,
                 auth_token=gateway_token,
                 lock=threading.Lock(),
+                cors_allow_origin="http://127.0.0.1:3000",
             )
             gateway = capsule_gateway.create_server(config)
             gateway_thread = threading.Thread(target=gateway.serve_forever, daemon=True)
@@ -238,6 +255,21 @@ def main() -> None:
                 raise AssertionError("gateway transport status did not report signing policy")
             if transport.get("signing", {}).get("signature_key_id") != "gateway-test":
                 raise AssertionError("gateway transport status did not report signature key id")
+            cors = transport.get("cors", {})
+            if cors.get("enabled") is not True:
+                raise AssertionError("gateway transport status did not expose CORS enablement")
+            if cors.get("allow_origin") != "http://127.0.0.1:3000":
+                raise AssertionError("gateway transport status did not expose configured CORS origin")
+            preflight = options_headers(
+                f"{gateway_url}/api/capsules/import",
+                "http://127.0.0.1:3000",
+                "POST",
+                "authorization, content-type, x-capsule-bundle-id, x-capsule-import-force",
+            )
+            if preflight.get("Access-Control-Allow-Origin") != "http://127.0.0.1:3000":
+                raise AssertionError("gateway CORS preflight did not allow the configured Model Plane origin")
+            if "X-Capsule-Bundle-Id" not in preflight.get("Access-Control-Allow-Headers", ""):
+                raise AssertionError("gateway CORS preflight did not allow bundle upload headers")
             capabilities = transport.get("capabilities", {})
             for capability in ["export", "download", "raw_upload_import", "stored_bundle_import", "delete"]:
                 if capabilities.get(capability) is not True:
@@ -357,11 +389,18 @@ def main() -> None:
             if not any(item["bundle_id"] == "gateway-thread-test" for item in bundle_list["bundles"]):
                 raise AssertionError("exported bundle was not listed")
 
-            bundle_bytes, download_headers = get_bytes(f"{gateway_url}/api/capsules/bundles/gateway-thread-test", auth_headers)
+            bundle_bytes, download_headers = get_bytes(
+                f"{gateway_url}/api/capsules/bundles/gateway-thread-test",
+                {**auth_headers, "Origin": "http://127.0.0.1:3000"},
+            )
             if not bundle_bytes.startswith(b"PK"):
                 raise AssertionError("downloaded bundle was not a zip/scap payload")
             if download_headers.get("X-Capsule-Bundle-Id") != "gateway-thread-test":
                 raise AssertionError("download did not include bundle id header")
+            if download_headers.get("Access-Control-Allow-Origin") != "http://127.0.0.1:3000":
+                raise AssertionError("download response did not include configured CORS origin")
+            if "X-Capsule-Bundle-SHA256" not in download_headers.get("Access-Control-Expose-Headers", ""):
+                raise AssertionError("download response did not expose capsule bundle headers to browser clients")
 
             imported_state = Path(temp) / "imported" / ".capsules"
             run_cli(

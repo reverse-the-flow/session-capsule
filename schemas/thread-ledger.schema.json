@@ -43,7 +43,8 @@
       "type": ["string", "null"]
     },
     "transcript_ref": {
-      "type": "string"
+      "type": "string",
+      "description": "Path relative to the capsule state directory. Do not include the .capsules prefix."
     },
     "active_capsule_id": {
       "type": ["string", "null"],
@@ -113,7 +114,8 @@
           "pattern": "^[A-Za-z0-9_.:-]+$"
         },
         "manifest_ref": {
-          "type": "string"
+          "type": "string",
+          "description": "Path relative to the capsule state directory. Do not include the .capsules prefix."
         },
         "kind": {
           "type": "string"
@@ -174,7 +176,8 @@
           "minimum": 0
         },
         "transcript_ref": {
-          "type": "string"
+          "type": "string",
+          "description": "Path relative to the capsule state directory. Do not include the .capsules prefix."
         }
       }
     }

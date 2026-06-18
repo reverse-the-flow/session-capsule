@@ -213,14 +213,23 @@ def main() -> None:
             manifest = json.loads((state / "threads" / "fake-thread" / "manifests" / "cap_test.json").read_text(encoding="utf-8"))
             if ledger["active_capsule_id"] != "cap_test":
                 raise AssertionError("active capsule was not cap_test")
+            ledger_refs = [ledger["transcript_ref"], *(item["manifest_ref"] for item in ledger["capsules"])]
+            for ref in ledger_refs:
+                if Path(ref).is_absolute() or str(ref).replace("\\", "/").startswith(".capsules/"):
+                    raise AssertionError(f"ledger did not use a state-relative ref: {ref}")
             first_message = json.loads((state / "threads" / "fake-thread" / "transcript.jsonl").read_text(encoding="utf-8").splitlines()[0])
             if first_message["token_start"] <= 0:
                 raise AssertionError("thread message did not start after prefill token range")
+            prefill_manifest_ref = ledger["capsules"][0]["manifest_ref"]
+            prefill_manifest = json.loads((state / prefill_manifest_ref).read_text(encoding="utf-8"))
+            prefill_source_ref = prefill_manifest["prefill_source"]["source_ref"]
+            if Path(prefill_source_ref).is_absolute() or str(prefill_source_ref).replace("\\", "/").startswith(".capsules/"):
+                raise AssertionError(f"prefill did not use a state-relative source_ref: {prefill_source_ref}")
             if manifest["storage"]["mode"] != "local_file":
                 raise AssertionError("hard checkpoint did not use local_file storage")
             snapshot_ref = manifest["storage"].get("snapshot_ref")
             if not snapshot_ref or Path(snapshot_ref).is_absolute() or str(snapshot_ref).replace("\\", "/").startswith(".capsules/"):
-                raise AssertionError(f"hard checkpoint did not use a store-relative snapshot_ref: {snapshot_ref}")
+                raise AssertionError(f"hard checkpoint did not use a state-relative snapshot_ref: {snapshot_ref}")
             if manifest["context"]["segments"][0]["source"] != "prefill":
                 raise AssertionError("hard checkpoint did not preserve parent prefill segment")
             if manifest["storage"]["snapshot_bytes"] != len(b"fake-slot-state"):

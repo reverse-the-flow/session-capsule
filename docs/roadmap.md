@@ -387,7 +387,7 @@ Recommended order:
 12. Stage 11: bundle integrity, signing, and sealing
 13. Stage 12: gateway access control
 14. Stage 13: Model Plane gateway launch profile
-15. Stage 14: snapshot reference policy
+15. Stage 14: state reference policy
 16. Stage 15: state location policy
 17. Stage 16: gateway identity contract
 
@@ -453,6 +453,8 @@ Initial status:
 - Bundle ids are slugged and scoped to `.capsules/bundles/`.
 - The gateway launch flag `--max-bundle-bytes` caps raw upload size.
 - Gateway launch flags can sign exported bundles and require verified signatures before import.
+- The gateway launch flag `--cors-allow-origin` enables browser preflight for direct Model Plane upload/download controls.
+- `/api/capsules/status` advertises `transport.cors` so Model Plane can discover whether browser transfer is enabled for this gateway instance.
 - `scripts/test_capsule_gateway_fake_backend.py` validates export, list, download, raw upload import, and delete through the gateway.
 - Model Plane job packets can now invoke the gateway transport endpoints through `capsule_cli.py job run`.
 - Protected gateway transport jobs authenticate through runner-side `--gateway-auth-token-file` or `--gateway-auth-token-env` flags.
@@ -531,6 +533,7 @@ Implementation steps:
 - Add an example local `llama.cpp` gateway launch profile.
 - Keep tokens and signing keys out of the profile; allow only secret references.
 - Map profile values directly to gateway launch flags.
+- Include an optional exact browser origin for Model Plane upload/download controls.
 - Require Model Plane to read `/api/capsules/status` after launch and verify the status `transport` object before enabling upload/download controls.
 - Validate the profile in the repo smoke suite.
 
@@ -538,6 +541,7 @@ Exit criteria:
 
 - Model Plane can read a profile, start the gateway, and know which URL to health-check.
 - The profile defines gateway state directory, endpoint, host, port, checkpoint mode, slot, timeout, upload cap, auth reference, and bundle-signing reference.
+- Browser-hosted controls can opt into gateway CORS without changing the bundle protocol.
 - The profile does not contain gateway tokens or signing key values.
 
 Initial status:
@@ -546,35 +550,36 @@ Initial status:
 - `examples/model-plane/gateway-launch-profile.example.json` shows a local `llama.cpp` hard-checkpoint gateway profile.
 - `capsule_cli.py gateway command PROFILE --json` renders a launch profile into concrete `capsule_gateway.py` arguments plus the OpenAI base URL and status URL.
 - `capsule_cli.py gateway check PROFILE --json` calls the profile status URL, authenticates from the profile's request-auth reference, and verifies the live gateway status/transport contract.
+- `gateway.cors_allow_origin` maps to `--cors-allow-origin` and is checked against `transport.cors` when present.
 - `scripts/validate_schema_examples.py` validates launch profiles separately from job packets.
 - `scripts/test_capsule_cli_model_plane_jobs.py` verifies launch-profile command rendering, authenticated status checking, and inline secret-value rejection.
 - `docs/model-plane.md` and `docs/configuration.md` explain how Model Plane maps the profile to gateway launch flags and status discovery.
 
-## Stage 14: Snapshot Reference Policy
+## Stage 14: State Reference Policy
 
-Goal: Make local hard snapshot references portable inside a capsule state directory while preserving the runtime-visible filename needed by slot APIs.
+Goal: Make local ledger, manifest, prefill source, and snapshot references portable inside a capsule state directory while preserving runtime-visible filenames needed by slot APIs.
 
 Implementation steps:
 
-- Use store-relative `storage.snapshot_ref` for local hard snapshot files.
-- Keep `.capsules/` out of manifest snapshot refs.
+- Use state-relative refs for `thread.transcript_ref`, `thread.capsules[].manifest_ref`, `prefill_source.source_ref`, and `storage.snapshot_ref`.
+- Keep `.capsules/` out of ledger and manifest refs because it is only the default root, not part of the portable reference.
 - Keep runtime-visible filenames in `storage.runtime_snapshot_ref`.
 - Keep `storage.snapshot_digest` as metadata instead of making v0 paths content-addressed.
-- Validate examples and smoke-test hard checkpoint manifests for the policy.
+- Validate examples and smoke-test runtime-written ledgers/manifests for the policy.
 
 Exit criteria:
 
-- Newly written hard checkpoint manifests use store-relative snapshot refs.
-- Examples reject absolute or `.capsules/`-prefixed `snapshot_ref` values.
-- The docs clearly distinguish storage paths, runtime paths, and content digests.
+- Newly written ledgers and manifests use state-relative refs.
+- Examples reject absolute, escaping, or `.capsules/`-prefixed state refs.
+- The docs clearly distinguish state refs, runtime paths, and content digests.
 
 Initial status:
 
-- `Store.relative_ref()` writes snapshot refs relative to the capsule state directory.
-- `examples/capsule-manifest.example.json` uses `threads/THREAD/snapshots/CAPSULE.bin`.
-- `scripts/validate_schema_examples.py` rejects absolute, escaping, or `.capsules/`-prefixed example snapshot refs.
-- `scripts/test_capsule_cli_fake_llamacpp.py` verifies hard checkpoint manifests use store-relative snapshot refs.
-- `docs/protocol.md` and `docs/configuration.md` document the v0 policy.
+- `Store.relative_ref()` writes runtime-created snapshot refs relative to the capsule state directory.
+- `examples/thread-ledger.example.json`, `examples/capsule-manifest.example.json`, and `examples/prefill-manifest.example.json` use refs without the `.capsules/` prefix.
+- `scripts/validate_schema_examples.py` rejects absolute, escaping, or `.capsules/`-prefixed state refs.
+- `scripts/test_capsule_cli_fake_llamacpp.py` verifies runtime-written ledger, prefill, and snapshot refs are state-relative.
+- `docs/protocol.md` and `docs/configuration.md` document the v0 state-reference policy.
 
 ## Stage 15: State Location Policy
 
