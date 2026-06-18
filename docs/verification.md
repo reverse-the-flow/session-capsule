@@ -14,10 +14,10 @@ It performs:
 - ASCII scan for repo text artifacts
 - schema/example validation, including restore-failure schema fields
 - conceptual CLI help smoke test
-- fake `llama.cpp` hard capsule save/restore and failed-restore fallback smoke test
+- fake `llama.cpp` hard capsule save/restore, shutdown job, and failed-restore fallback smoke test
 - `.scap` export/import/verify, dry-run sizing, endpoint compatibility warning, signature, and tamper-rejection smoke test
 - storage config, pinning, stats, and GC smoke test
-- Model Plane job-packet smoke test, including signed export jobs and authenticated gateway transport job packets
+- Model Plane job-packet smoke test, including shutdown planning, signed export jobs, and authenticated gateway transport job packets
 - local gateway fake-backend smoke test
 - gateway auth plus signed bundle export/list/download/upload/delete smoke path
 

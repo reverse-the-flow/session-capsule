@@ -235,13 +235,20 @@ Model Plane should supervise the gateway, not absorb it.
 
 Model Plane owns launch profiles, lifecycle, health checks, and job routing. The gateway owns the request path and capsule restore/checkpoint behavior. The model runtime owns model weights, live KV cache, slots, and generation.
 
-Gateway transport job packet types:
+Supported job packet types:
 
+- `resume_thread`
+- `checkpoint_thread`
+- `shutdown_thread`
+- `export_thread`
+- `validate_capsule`
 - `gateway_export_bundle`
 - `gateway_list_bundles`
 - `gateway_download_bundle`
 - `gateway_import_bundle`
 - `gateway_delete_bundle`
+
+Shutdown jobs let Model Plane ask the harness to save dirty thread state before unloading a runtime.
 
 Signed export job packets keep signing keys outside the packet:
 

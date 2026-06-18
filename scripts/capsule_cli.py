@@ -323,6 +323,9 @@ Capsule gateway owns:
 Run a job packet:
   py -3 .\\scripts\\capsule_cli.py job run .\\examples\\model-plane\\checkpoint-thread.example.json --dry-run
 
+Shutdown before unload:
+  py -3 .\\scripts\\capsule_cli.py job run .\\examples\\model-plane\\shutdown-thread.example.json --dry-run
+
 Signed export job packets:
   py -3 .\\scripts\\capsule_cli.py job run .\\examples\\model-plane\\export-thread.example.json --signature-key-file .\\capsule-signing.key --signature-key-id local
 
@@ -332,7 +335,12 @@ Protected gateway transport jobs:
 Gateway health endpoint for launch profiles:
   /api/capsules/status
 
-Gateway transport job types:
+Supported job packet types:
+  resume_thread
+  checkpoint_thread
+  shutdown_thread
+  export_thread
+  validate_capsule
   gateway_export_bundle
   gateway_list_bundles
   gateway_download_bundle
@@ -2457,6 +2465,7 @@ def supported_job_types() -> set[str]:
     return {
         "resume_thread",
         "checkpoint_thread",
+        "shutdown_thread",
         "export_thread",
         "validate_capsule",
         "gateway_export_bundle",
@@ -2716,6 +2725,18 @@ def run_job_packet(args: argparse.Namespace) -> int:
         if mode == "soft":
             return checkpoint_soft(checkpoint_args)
         raise RuntimeError("checkpoint_thread mode must be soft or hard")
+
+    if job_type == "shutdown_thread":
+        shutdown_args = argparse.Namespace(
+            state_dir=args.state_dir,
+            thread=str(require_job_param(params, "thread_id")),
+            slot=int(params.get("slot", 0)),
+            capsule_id=params.get("capsule_id"),
+            runtime_filename=params.get("runtime_filename"),
+            timeout=float(params.get("timeout", 120.0)),
+            force=bool(params.get("force", False)),
+        )
+        return shutdown_thread(shutdown_args)
 
     if job_type == "export_thread":
         export_args = argparse.Namespace(

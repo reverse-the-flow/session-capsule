@@ -153,6 +153,17 @@ def main() -> None:
         if "type: resume_thread" not in resume_result.stdout:
             raise AssertionError("dry-run resume job did not print its plan")
 
+        shutdown_job = jobs / "shutdown-thread.json"
+        write_job(
+            shutdown_job,
+            "shutdown_thread",
+            {"thread_id": "job-thread", "slot": 0, "force": False},
+            dry_run=True,
+        )
+        shutdown_plan = run_cli(state, "job", "run", str(shutdown_job))
+        if "type: shutdown_thread" not in shutdown_plan.stdout:
+            raise AssertionError("dry-run shutdown job did not print its plan")
+
         config = capsule_gateway.GatewayConfig(
             state_dir=state.resolve(),
             endpoint_id="local-soft",

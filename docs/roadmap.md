@@ -346,6 +346,7 @@ Implementation steps:
 - Add job packet types:
   - `resume_thread`
   - `checkpoint_thread`
+  - `shutdown_thread`
   - `export_thread`
   - `validate_capsule`
 - Let external schedulers or skills launch the harness from Model Plane job packets.
@@ -359,9 +360,10 @@ Exit criteria:
 Initial status:
 
 - `schemas/model-plane-job.schema.json` defines the first job-packet contract.
-- `examples/model-plane/` contains example packets for `resume_thread`, `checkpoint_thread`, `export_thread`, and `validate_capsule`.
+- `examples/model-plane/` contains example packets for `resume_thread`, `checkpoint_thread`, `shutdown_thread`, `export_thread`, and `validate_capsule`.
 - `capsule_cli.py job run JOB.json` executes those packets through the existing harness paths.
 - `--dry-run` prints packet intent without touching the ledger or runtime.
+- `shutdown_thread` lets Model Plane ask the harness to save a dirty checkpoint before runtime unload.
 - `export_thread` jobs can sign bundles with runner-side `--signature-key-file`, `--signature-key-env`, and `--signature-key-id` flags.
 - Job packet validation rejects secret key or auth-token params so secrets stay outside packets.
 - `docs/model-plane.md` records the boundary: Model Plane owns routing and policy, not model weights, live KV tensors, runtime slot layout, or the inference loop.

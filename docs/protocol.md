@@ -200,6 +200,7 @@ Supported job types:
 
 - `resume_thread`
 - `checkpoint_thread`
+- `shutdown_thread`
 - `export_thread`
 - `validate_capsule`
 - `gateway_export_bundle`
@@ -208,7 +209,7 @@ Supported job types:
 - `gateway_import_bundle`
 - `gateway_delete_bundle`
 
-Model Plane emits intent and policy. The capsule harness still owns runtime-specific restore, save, diff append, bundle export, gateway upload/download calls, and compatibility checks. Signing keys and gateway auth tokens stay outside packets and are supplied to the runner when needed.
+Model Plane emits intent and policy. The capsule harness still owns runtime-specific restore, save, shutdown checkpointing, diff append, bundle export, gateway upload/download calls, and compatibility checks. Signing keys and gateway auth tokens stay outside packets and are supplied to the runner when needed.
 
 ## Storage Modes
 

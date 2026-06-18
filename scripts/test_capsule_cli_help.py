@@ -52,6 +52,8 @@ def main() -> None:
     model_plane = run_cli("help", "model-plane")
     if "gateway_export_bundle" not in model_plane:
         raise AssertionError("model-plane help did not include gateway transport job types")
+    if "shutdown_thread" not in model_plane:
+        raise AssertionError("model-plane help did not include lifecycle shutdown job type")
     if "--gateway-auth-token-file" not in model_plane:
         raise AssertionError("model-plane help did not include protected gateway job auth flags")
     if "--signature-key-file" not in model_plane:

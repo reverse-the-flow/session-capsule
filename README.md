@@ -64,9 +64,9 @@ That matters most for:
 - [scripts/validate_schema_examples.py](/X:/Experiments/session-capsules/scripts/validate_schema_examples.py) - dependency-free sanity checks for the bundled schema examples
 - [scripts/capsule_cli.py](/X:/Experiments/session-capsules/scripts/capsule_cli.py) - Stage 2 soft-capsule CLI for endpoint records, thread ledgers, transcripts, checkpoints, and inspection
 - [scripts/capsule_gateway.py](/X:/Experiments/session-capsules/scripts/capsule_gateway.py) - local OpenAI-compatible gateway that manages thread restore, request deltas, and checkpointing in the request path
-- [scripts/test_capsule_cli_fake_llamacpp.py](/X:/Experiments/session-capsules/scripts/test_capsule_cli_fake_llamacpp.py) - fake `llama.cpp` slot server smoke test for hard checkpoint and resume commands
+- [scripts/test_capsule_cli_fake_llamacpp.py](/X:/Experiments/session-capsules/scripts/test_capsule_cli_fake_llamacpp.py) - fake `llama.cpp` slot server smoke test for hard checkpoint, resume, shutdown job, and restore fallback commands
 - [scripts/test_capsule_cli_export_import.py](/X:/Experiments/session-capsules/scripts/test_capsule_cli_export_import.py) - `.scap` bundle export/import smoke test
-- [scripts/test_capsule_cli_model_plane_jobs.py](/X:/Experiments/session-capsules/scripts/test_capsule_cli_model_plane_jobs.py) - Model Plane job-packet smoke test for checkpoint, validate, export, and dry-run resume
+- [scripts/test_capsule_cli_model_plane_jobs.py](/X:/Experiments/session-capsules/scripts/test_capsule_cli_model_plane_jobs.py) - Model Plane job-packet smoke test for checkpoint, validate, export, shutdown planning, and gateway transport
 - [scripts/test_capsule_gateway_fake_backend.py](/X:/Experiments/session-capsules/scripts/test_capsule_gateway_fake_backend.py) - fake backend smoke test for the local capsule gateway
 - [data/scenarios/research_loop_small.json](/X:/Experiments/session-capsules/data/scenarios/research_loop_small.json) - example transcript-growth scenario for the benchmark harness
 
@@ -256,6 +256,7 @@ Run a Model Plane job packet through the standalone harness:
 
 ```powershell
 py -3 .\scripts\capsule_cli.py --state-dir .\.capsules job run .\examples\model-plane\checkpoint-thread.example.json --dry-run
+py -3 .\scripts\capsule_cli.py --state-dir .\.capsules job run .\examples\model-plane\shutdown-thread.example.json --dry-run
 ```
 
 Gateway upload/download can also be driven by Model Plane job packets:

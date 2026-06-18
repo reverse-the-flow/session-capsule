@@ -25,6 +25,7 @@
       "enum": [
         "resume_thread",
         "checkpoint_thread",
+        "shutdown_thread",
         "export_thread",
         "validate_capsule",
         "gateway_export_bundle",

@@ -256,6 +256,7 @@ def validate_model_plane_job(path: Path) -> None:
     supported = {
         "resume_thread",
         "checkpoint_thread",
+        "shutdown_thread",
         "export_thread",
         "validate_capsule",
         "gateway_export_bundle",
@@ -288,6 +289,14 @@ def validate_model_plane_job(path: Path) -> None:
             raise ValidationError(f"{name}.params.mode must be soft or hard")
         if "slot" in params:
             require_nonnegative_int(f"{name}.params.slot", params["slot"])
+    elif job_type == "shutdown_thread":
+        require_keys(name, params, ["thread_id"])
+        if "slot" in params:
+            require_nonnegative_int(f"{name}.params.slot", params["slot"])
+        if "timeout" in params:
+            require_nonnegative_number(f"{name}.params.timeout", params["timeout"])
+        if "force" in params:
+            require_bool(f"{name}.params.force", params["force"])
     elif job_type == "export_thread":
         require_keys(name, params, ["thread_id", "out"])
         for key in ["include_snapshots", "redact_transcript", "force"]:

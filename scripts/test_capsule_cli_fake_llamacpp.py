@@ -123,6 +123,18 @@ def run_cli(state_dir: Path, *args: str) -> subprocess.CompletedProcess[str]:
     return result
 
 
+def write_job(path: Path, job_type: str, params: dict[str, object]) -> None:
+    payload = {
+        "schema_version": "0.1",
+        "job_id": path.stem,
+        "job_type": job_type,
+        "created_at": "2026-06-18T14:20:00-05:00",
+        "requested_by": "fake-llamacpp-smoke",
+        "params": params,
+    }
+    path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+
+
 def main() -> None:
     server = ThreadingHTTPServer(("127.0.0.1", 0), FakeLlamaHandler)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
@@ -132,6 +144,8 @@ def main() -> None:
     try:
         with tempfile.TemporaryDirectory(prefix="session-capsules-fake-") as temp:
             state = Path(temp) / ".capsules"
+            jobs = Path(temp) / "jobs"
+            jobs.mkdir()
             run_cli(
                 state,
                 "endpoint",
@@ -216,6 +230,24 @@ def main() -> None:
                 raise AssertionError("slot restore request was not observed")
             if "/v1/chat/completions" not in paths:
                 raise AssertionError("append-diff chat completion was not observed")
+
+            shutdown_job = jobs / "shutdown-thread.json"
+            write_job(
+                shutdown_job,
+                "shutdown_thread",
+                {
+                    "thread_id": "fake-thread",
+                    "slot": 1,
+                    "capsule_id": "job_shutdown_cap",
+                    "force": True,
+                },
+            )
+            shutdown_result = run_cli(state, "job", "run", str(shutdown_job))
+            if "saved shutdown checkpoint: job_shutdown_cap" not in shutdown_result.stdout:
+                raise AssertionError("shutdown_thread job did not save the expected checkpoint")
+            job_shutdown_manifest = state / "threads" / "fake-thread" / "manifests" / "job_shutdown_cap.json"
+            if not job_shutdown_manifest.exists():
+                raise AssertionError("shutdown_thread job did not create a manifest")
 
             run_cli(state, "thread", "start", "--endpoint", "local-llamacpp", "--name", "fallback-thread")
             run_cli(state, "thread", "append", "--thread", "fallback-thread", "--role", "user", "--content", "restore fallback prompt")

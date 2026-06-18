@@ -34,6 +34,7 @@ Supported job types:
 
 - `resume_thread`
 - `checkpoint_thread`
+- `shutdown_thread`
 - `export_thread`
 - `validate_capsule`
 - `gateway_export_bundle`
@@ -46,6 +47,7 @@ Run a packet with:
 
 ```powershell
 py -3 .\scripts\capsule_cli.py --state-dir .\.capsules job run .\examples\model-plane\checkpoint-thread.example.json
+py -3 .\scripts\capsule_cli.py --state-dir .\.capsules job run .\examples\model-plane\shutdown-thread.example.json --dry-run
 ```
 
 Inspect without executing:
@@ -100,6 +102,7 @@ Every job must be safe to degrade:
 
 - `resume_thread` falls back only through the existing CLI restore/replay behavior.
 - `checkpoint_thread` can use `mode=soft` when no runtime slot is available.
+- `shutdown_thread` saves a dirty checkpoint before Model Plane unloads the runtime.
 - `export_thread` omits hard snapshots unless explicitly requested.
 - `validate_capsule` can report a missing local snapshot without invalidating the canonical transcript.
 - Gateway transport jobs fail as transfer/control-plane operations without invalidating the canonical transcript.
