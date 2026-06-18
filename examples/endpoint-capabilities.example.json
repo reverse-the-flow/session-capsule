@@ -25,6 +25,23 @@
     "restore_action": "restore",
     "slot_field": "id_slot"
   },
+  "doctor": {
+    "slots_url": "http://localhost:8080/slots",
+    "client_duration_ms": 3.25,
+    "slot_count": 2,
+    "slot_probe": {
+      "response_shape": "list",
+      "slot_count": 2,
+      "sample_keys": ["id", "is_processing", "n_ctx"],
+      "slot_identity_fields": ["id"],
+      "configured_slot_field": "id_slot",
+      "configured_slot_field_seen_in_slots": false,
+      "has_n_ctx": true,
+      "n_ctx_values": [8192],
+      "has_is_processing": true,
+      "is_processing_values": [false]
+    }
+  },
   "checked_at": "2026-06-16T16:45:00-05:00",
   "notes": [
     "This example describes a local llama.cpp endpoint with hard local file capsules but no sealed user-carried blob support."

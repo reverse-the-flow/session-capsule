@@ -210,6 +210,7 @@ They include:
 - tokenizer hash
 - context limit
 - slot API fields
+- latest `endpoint doctor` slot probe evidence, including `/slots` response shape, sample keys, candidate slot identity fields, configured chat slot field, and visible context/processing fields
 
 ## State References
 

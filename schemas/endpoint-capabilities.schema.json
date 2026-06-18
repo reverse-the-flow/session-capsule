@@ -132,6 +132,55 @@
         "slot_count": {
           "type": ["integer", "null"],
           "minimum": 0
+        },
+        "slot_probe": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "response_shape": {
+              "type": "string"
+            },
+            "slot_count": {
+              "type": ["integer", "null"],
+              "minimum": 0
+            },
+            "sample_keys": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "slot_identity_fields": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "configured_slot_field": {
+              "type": "string"
+            },
+            "configured_slot_field_seen_in_slots": {
+              "type": "boolean"
+            },
+            "has_n_ctx": {
+              "type": "boolean"
+            },
+            "n_ctx_values": {
+              "type": "array",
+              "items": {
+                "type": "integer"
+              }
+            },
+            "has_is_processing": {
+              "type": "boolean"
+            },
+            "is_processing_values": {
+              "type": "array",
+              "items": {
+                "type": "boolean"
+              }
+            }
+          }
         }
       }
     },

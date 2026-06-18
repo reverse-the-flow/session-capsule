@@ -178,7 +178,14 @@ Useful metadata:
   --slot-field
 
 Check hard capsule support:
-  py -3 .\\scripts\\capsule_cli.py endpoint doctor local-llamacpp --strict""",
+  py -3 .\\scripts\\capsule_cli.py endpoint doctor local-llamacpp --strict
+
+Doctor records slot probe evidence in the endpoint record:
+  /slots response shape
+  sample slot keys
+  candidate slot identity fields
+  configured chat slot field
+  visible n_ctx and is_processing fields""",
     "thread": """A thread is the canonical transcript and capsule chain.
 
 Start:
@@ -817,11 +824,54 @@ def chat_completion(
     return post_json(f"{endpoint['base_url'].rstrip('/')}{chat_path}", payload, timeout)
 
 
+def normalize_slots_response(slots_payload: Any) -> tuple[list[JSONDict] | None, str]:
+    if isinstance(slots_payload, list):
+        return [item for item in slots_payload if isinstance(item, dict)], "list"
+    if isinstance(slots_payload, dict):
+        for key in ["slots", "data"]:
+            value = slots_payload.get(key)
+            if isinstance(value, list):
+                return [item for item in value if isinstance(item, dict)], f"object.{key}"
+        return None, "object"
+    return None, type(slots_payload).__name__
+
+
+def slot_probe_report(slots_payload: Any, configured_slot_field: str) -> JSONDict:
+    slots, response_shape = normalize_slots_response(slots_payload)
+    sample_keys: set[str] = set()
+    n_ctx_values: set[int] = set()
+    processing_values: set[bool] = set()
+    if slots is not None:
+        for slot in slots[:8]:
+            sample_keys.update(str(key) for key in slot)
+            n_ctx = slot.get("n_ctx")
+            if isinstance(n_ctx, int):
+                n_ctx_values.add(n_ctx)
+            is_processing = slot.get("is_processing")
+            if isinstance(is_processing, bool):
+                processing_values.add(is_processing)
+    identity_candidates = ["id", "id_slot", "slot_id", "slot", "index"]
+    identity_fields = [field for field in identity_candidates if field in sample_keys]
+    return {
+        "response_shape": response_shape,
+        "slot_count": len(slots) if slots is not None else None,
+        "sample_keys": sorted(sample_keys),
+        "slot_identity_fields": identity_fields,
+        "configured_slot_field": configured_slot_field,
+        "configured_slot_field_seen_in_slots": configured_slot_field in sample_keys,
+        "has_n_ctx": bool(n_ctx_values),
+        "n_ctx_values": sorted(n_ctx_values),
+        "has_is_processing": bool(processing_values),
+        "is_processing_values": sorted(processing_values),
+    }
+
+
 def endpoint_doctor(args: argparse.Namespace) -> int:
     store = Store(args.state_dir)
     endpoint = store.load_endpoint(args.endpoint_id)
     slot_api = endpoint.get("slot_api", {})
     slots_path = slot_api.get("slots_path", "/slots")
+    configured_slot_field = str(slot_api.get("slot_field", "id_slot"))
     url = endpoint["base_url"].rstrip("/") + slots_path
     endpoint["checked_at"] = now_iso()
 
@@ -838,19 +888,28 @@ def endpoint_doctor(args: argparse.Namespace) -> int:
         print("soft capsules remain available; hard slot restore is unverified")
         return 1 if args.strict else 0
 
-    endpoint["capabilities"]["slot_save_restore"] = True
+    slot_probe = slot_probe_report(slots, configured_slot_field)
+    slot_count = slot_probe.get("slot_count")
+    slot_save_restore = isinstance(slot_count, int) and slot_count > 0
+    endpoint["capabilities"]["slot_save_restore"] = slot_save_restore
     endpoint["doctor"] = {
         "slots_url": url,
         "client_duration_ms": elapsed_ms,
-        "slot_count": len(slots) if isinstance(slots, list) else None,
+        "slot_count": slot_count,
+        "slot_probe": slot_probe,
     }
     write_json(store.endpoint_path(args.endpoint_id), endpoint)
     print(f"endpoint reachable: yes ({elapsed_ms} ms)")
-    if isinstance(slots, list):
-        print(f"slots: {len(slots)}")
+    if slot_count is not None:
+        print(f"slots: {slot_count}")
+        print(f"slots response shape: {slot_probe['response_shape']}")
+        identity_fields = slot_probe.get("slot_identity_fields", [])
+        print(f"slot identity fields: {', '.join(identity_fields) if identity_fields else 'none'}")
+        print(f"configured chat slot field: {configured_slot_field}")
+        print(f"configured field seen in /slots: {'yes' if slot_probe['configured_slot_field_seen_in_slots'] else 'no'}")
     else:
-        print("slots response was not a list")
-    return 0
+        print(f"slots response was not recognized as a slot list ({slot_probe['response_shape']})")
+    return 0 if slot_save_restore or not args.strict else 1
 
 
 def load_prefill_source(args: argparse.Namespace) -> str:

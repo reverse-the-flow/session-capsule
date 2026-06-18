@@ -126,6 +126,40 @@ def validate_endpoint(data: dict[str, Any]) -> None:
         if key not in capabilities:
             raise ValidationError(f"endpoint.capabilities is missing {key}")
         require_bool(f"endpoint.capabilities.{key}", capabilities[key])
+    doctor = data.get("doctor")
+    if doctor is not None:
+        if not isinstance(doctor, dict):
+            raise ValidationError("endpoint.doctor must be an object")
+        probe = doctor.get("slot_probe")
+        if probe is not None:
+            if not isinstance(probe, dict):
+                raise ValidationError("endpoint.doctor.slot_probe must be an object")
+            require_keys(
+                "endpoint.doctor.slot_probe",
+                probe,
+                [
+                    "response_shape",
+                    "slot_count",
+                    "sample_keys",
+                    "slot_identity_fields",
+                    "configured_slot_field",
+                    "configured_slot_field_seen_in_slots",
+                    "has_n_ctx",
+                    "n_ctx_values",
+                    "has_is_processing",
+                    "is_processing_values",
+                ],
+            )
+            if not isinstance(probe["sample_keys"], list):
+                raise ValidationError("endpoint.doctor.slot_probe.sample_keys must be a list")
+            if probe["configured_slot_field"] not in {"id_slot", "slot_id", "id"}:
+                raise ValidationError("endpoint.doctor.slot_probe.configured_slot_field should be a known slot field")
+            require_bool(
+                "endpoint.doctor.slot_probe.configured_slot_field_seen_in_slots",
+                probe["configured_slot_field_seen_in_slots"],
+            )
+            require_bool("endpoint.doctor.slot_probe.has_n_ctx", probe["has_n_ctx"])
+            require_bool("endpoint.doctor.slot_probe.has_is_processing", probe["has_is_processing"])
 
 
 def validate_capsule(data: dict[str, Any], endpoint: dict[str, Any]) -> None:

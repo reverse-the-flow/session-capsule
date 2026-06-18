@@ -166,7 +166,23 @@ def main() -> None:
                 "--context-limit",
                 "8192",
             )
-            run_cli(state, "endpoint", "doctor", "local-llamacpp", "--strict")
+            doctor = run_cli(state, "endpoint", "doctor", "local-llamacpp", "--strict")
+            if "slot identity fields: id" not in doctor.stdout:
+                raise AssertionError("endpoint doctor did not report slot identity fields")
+            if "configured chat slot field: id_slot" not in doctor.stdout:
+                raise AssertionError("endpoint doctor did not report configured chat slot field")
+            endpoint_record = json.loads((state / "endpoints" / "local-llamacpp.json").read_text(encoding="utf-8"))
+            slot_probe = endpoint_record.get("doctor", {}).get("slot_probe", {})
+            if slot_probe.get("response_shape") != "list":
+                raise AssertionError("endpoint doctor did not persist slot response shape")
+            if slot_probe.get("slot_identity_fields") != ["id"]:
+                raise AssertionError("endpoint doctor did not persist slot identity fields")
+            if slot_probe.get("configured_slot_field") != "id_slot":
+                raise AssertionError("endpoint doctor did not persist configured slot field")
+            if slot_probe.get("configured_slot_field_seen_in_slots") is not False:
+                raise AssertionError("endpoint doctor should distinguish chat slot field from /slots identity field")
+            if slot_probe.get("n_ctx_values") != [8192]:
+                raise AssertionError("endpoint doctor did not persist n_ctx values")
             source_path = Path(temp) / "user_prefill.md"
             source_path.write_text("Stable user prefill for fake runtime.", encoding="utf-8")
             run_cli(

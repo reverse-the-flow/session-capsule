@@ -31,6 +31,14 @@ Add an endpoint:
 py -3 .\scripts\capsule_cli.py endpoint add local-llamacpp --type llamacpp --base-url http://localhost:8080
 ```
 
+Probe hard capsule support:
+
+```powershell
+py -3 .\scripts\capsule_cli.py endpoint doctor local-llamacpp --strict
+```
+
+Doctor records `/slots` evidence in the endpoint record: response shape, sample keys, candidate slot identity fields, configured chat slot field, and visible `n_ctx` / `is_processing` fields.
+
 Start a thread:
 
 ```powershell

@@ -701,10 +701,11 @@ Initial status:
 - If hard restore fails, `resume --append-diff` marks that capsule `restore_failed`, replays the canonical transcript with `cache_prompt=false`, and saves a replacement hard checkpoint.
 - The schema layer models `restore_failed` links and manifest `last_restore_failed_at` / `last_restore_error` lifecycle fields.
 - `shutdown --thread X --slot N` saves a dirty thread before model unload.
+- `endpoint doctor` persists `doctor.slot_probe` evidence for `/slots` response shape, sample keys, candidate slot identity fields, configured chat slot field, and visible context/processing fields.
 - `scripts/test_capsule_cli_fake_llamacpp.py` validates the save/restore/append-diff request path and failed-restore fallback against a fake slot server.
 
 ## Open Questions
 
-- Which `llama.cpp` server builds expose the most stable slot API fields?
+- Which live `llama.cpp` server builds should be added to a slot-probe compatibility matrix?
 - Which opencode hook should fill per-session capsule headers automatically instead of relying on launch-time environment variables?
 - Which cross-platform encryption backend should provide the future sealed `.scap` envelope without inventing local crypto?
