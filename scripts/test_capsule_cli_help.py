@@ -78,6 +78,8 @@ def main() -> None:
         raise AssertionError("model-plane help did not include gateway launch-profile command rendering")
     if "gateway check" not in model_plane:
         raise AssertionError("model-plane help did not include gateway launch-profile status checking")
+    if "endpoint_verified" not in model_plane:
+        raise AssertionError("model-plane help did not include endpoint readiness status")
     if "gateway status" not in model_plane or "gateway upload" not in model_plane:
         raise AssertionError("model-plane help did not include direct gateway transport commands")
 

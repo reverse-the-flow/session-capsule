@@ -112,6 +112,8 @@ py -3 .\scripts\capsule_cli.py gateway check .\examples\model-plane\gateway-laun
 
 That check calls the profile's `transport.status_url`, authenticates from `security.request_auth`, and verifies that the status response matches the profile and includes the required `transport` object before upload/download controls are enabled.
 
+The same check reports `endpoint_verified` and `endpoint_compatibility`. If the profile requests `checkpoint_mode=hard`, the check requires the running gateway status to report `hard_checkpoint_ready=true`, which depends on a successful endpoint slot probe.
+
 For `gateway check`, relative file secret references are resolved from the profile directory. The profile still stores only references, not token or key values.
 
 For UI-driven `.scap` transfer, Model Plane should call the gateway bundle endpoints instead of reimplementing the archive format:
@@ -123,7 +125,7 @@ GET    /api/capsules/bundles/{bundle_id}
 POST   /api/capsules/import
 ```
 
-Model Plane should read `/api/capsules/status` first and use its `transport` object as the runtime contract. It advertises the API version, max raw upload bytes, `.scap` content type, endpoint paths, auth requirement, signing policy, import policy, and upload/download capabilities for the specific gateway instance that was launched.
+Model Plane should read `/api/capsules/status` first and use its `transport`, `identity`, and `endpoint_compatibility` objects as the runtime contract. It advertises the API version, max raw upload bytes, `.scap` content type, endpoint paths, auth requirement, signing policy, import policy, upload/download capabilities, thread identity headers, and hard checkpoint readiness for the specific gateway instance that was launched.
 
 If Model Plane's upload/download controls run in a browser, the launch profile should set `gateway.cors_allow_origin` to that UI's exact origin. The status response then advertises `transport.cors`; Model Plane should require it before enabling direct browser `.scap` transfer controls.
 

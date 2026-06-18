@@ -26,6 +26,7 @@ It performs:
 - local gateway fake-backend smoke test
 - gateway auth plus signed bundle export/list/download/upload/delete smoke path
 - gateway status discovery for transport API version, upload size, content type, auth policy, signing policy, endpoint paths, and bundle capabilities
+- gateway status discovery for endpoint compatibility and hard checkpoint readiness
 - gateway status discovery for identity headers and Open WebUI/opencode metadata mappings
 
 ## Current Evidence
@@ -56,6 +57,7 @@ The gateway integration contract is verified by fake-backend tests that exercise
 - hard restore plus diff forwarding
 - checkpoint after response
 - transport status discovery for Model Plane upload/download integration
+- endpoint compatibility status discovery for Model Plane hard checkpoint gating
 - gateway CORS preflight and exposed download headers for browser-hosted upload/download controls
 - identity status discovery for Open WebUI and opencode thread metadata
 - state-relative ledger, prefill, and snapshot refs in runtime-written files
@@ -63,7 +65,7 @@ The gateway integration contract is verified by fake-backend tests that exercise
 - gateway redacted bundle export
 - gateway raw-upload and stored-bundle import target-thread override
 - authenticated gateway requests and transport job packets when a token is configured
-- Model Plane gateway launch-profile command rendering, authenticated status checking, and inline secret-value rejection
+- Model Plane gateway launch-profile command rendering, authenticated status checking, endpoint readiness reporting, and inline secret-value rejection
 
 Live client verification remains an operator step:
 

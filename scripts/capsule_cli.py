@@ -431,6 +431,8 @@ Check a launched gateway:
 Gateway health endpoint for launch profiles:
   /api/capsules/status
 
+Gateway check reports endpoint_verified and endpoint_compatibility. Hard checkpoint profiles require a slot_probe_ok endpoint.
+
 Gateway import jobs may use params.thread_id as the target local thread id for the imported bundle.
 
 Supported job packet types:
@@ -3501,6 +3503,17 @@ def verify_gateway_status_contract(profile: JSONDict, status: JSONDict) -> JSOND
                 mismatches.append(name)
         transport_verified = not any(name.startswith("transport.") for name in mismatches)
 
+    endpoint_compatibility = status.get("endpoint_compatibility")
+    endpoint_verified = True
+    if gateway.get("checkpoint_mode") == "hard":
+        endpoint_verified = (
+            isinstance(endpoint_compatibility, dict)
+            and endpoint_compatibility.get("hard_checkpoint_ready") is True
+            and endpoint_compatibility.get("endpoint_id") == gateway.get("endpoint_id")
+        )
+        if not endpoint_verified:
+            mismatches.append("endpoint_compatibility.hard_checkpoint_ready")
+
     if mismatches:
         raise RuntimeError("Gateway status did not match launch profile: " + ", ".join(mismatches))
 
@@ -3510,6 +3523,8 @@ def verify_gateway_status_contract(profile: JSONDict, status: JSONDict) -> JSOND
         "checkpoint_mode": status.get("checkpoint_mode"),
         "auth_required": status.get("auth_required"),
         "transport_verified": transport_verified,
+        "endpoint_verified": endpoint_verified,
+        "endpoint_compatibility": endpoint_compatibility,
         "threads": status.get("threads"),
         "bundles": status.get("bundles"),
         "bundle_import_policy": transport_status.get("import_policy") if isinstance(transport_status, dict) else None,
@@ -3542,6 +3557,7 @@ def check_gateway_profile(args: argparse.Namespace) -> int:
     print(f"checkpoint_mode: {output['checkpoint_mode']}")
     print(f"auth_required: {str(output['auth_required']).lower()}")
     print(f"transport_verified: {str(output['transport_verified']).lower()}")
+    print(f"endpoint_verified: {str(output['endpoint_verified']).lower()}")
     return 0
 
 
@@ -3724,9 +3740,17 @@ def gateway_status_command(args: argparse.Namespace) -> int:
     transport = data.get("transport", {})
     auth = transport.get("auth", {}) if isinstance(transport, dict) else {}
     capabilities = transport.get("capabilities", {}) if isinstance(transport, dict) else {}
+    endpoint_compatibility = data.get("endpoint_compatibility", {})
+    if not isinstance(endpoint_compatibility, dict):
+        endpoint_compatibility = {}
+    slot_probe = endpoint_compatibility.get("slot_probe", {})
+    if not isinstance(slot_probe, dict):
+        slot_probe = {}
     print(f"gateway: {gateway_base_url(params)}")
     print(f"status: {data.get('status')}")
     print(f"endpoint: {data.get('endpoint_id')}")
+    print(f"hard checkpoint ready: {'yes' if endpoint_compatibility.get('hard_checkpoint_ready') else 'no'}")
+    print(f"slot probe: {slot_probe.get('status')}")
     print(f"threads: {data.get('threads')}")
     print(f"bundles: {data.get('bundles')}")
     print(f"auth required: {'yes' if auth.get('required') else 'no'}")

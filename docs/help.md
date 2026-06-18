@@ -346,6 +346,14 @@ py -3 .\scripts\capsule_cli.py gateway check .\examples\model-plane\gateway-laun
 
 For `gateway check`, relative file secret references are resolved from the profile directory.
 
+`gateway check --json` reports:
+
+- `transport_verified`
+- `endpoint_verified`
+- `endpoint_compatibility`
+
+Hard checkpoint profiles require a `slot_probe_ok` endpoint before `endpoint_verified` can pass.
+
 Supported job packet types:
 
 - `resume_thread`

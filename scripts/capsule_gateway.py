@@ -462,6 +462,46 @@ def identity_contract(config: GatewayConfig) -> JSONDict:
     }
 
 
+def endpoint_compatibility(config: GatewayConfig, endpoint: JSONDict) -> JSONDict:
+    matrix = cc.endpoint_matrix_report(cc.Store(config.state_dir))
+    matrix_entry = next(
+        (
+            item
+            for item in matrix.get("endpoints", [])
+            if item.get("endpoint_id") == config.endpoint_id
+        ),
+        None,
+    )
+    if matrix_entry is None:
+        matrix_entry = {
+            "endpoint_id": config.endpoint_id,
+            "type": endpoint.get("type"),
+            "runtime": endpoint.get("runtime", {}),
+            "capabilities": endpoint.get("capabilities", {}),
+            "slot_api": endpoint.get("slot_api", {}),
+            "slot_probe": {"status": cc.slot_probe_status(endpoint)},
+            "checked_at": endpoint.get("checked_at"),
+        }
+    capabilities = matrix_entry.get("capabilities", {})
+    slot_probe = matrix_entry.get("slot_probe", {})
+    if not isinstance(capabilities, dict):
+        capabilities = {}
+    if not isinstance(slot_probe, dict):
+        slot_probe = {}
+    hard_ready = capabilities.get("slot_save_restore") is True and slot_probe.get("status") == "slot_probe_ok"
+    return {
+        "endpoint_id": config.endpoint_id,
+        "type": matrix_entry.get("type"),
+        "runtime": matrix_entry.get("runtime", {}),
+        "slot_api": matrix_entry.get("slot_api", {}),
+        "checked_at": matrix_entry.get("checked_at"),
+        "slot_save_restore": capabilities.get("slot_save_restore") is True,
+        "slot_probe": slot_probe,
+        "hard_checkpoint_required": config.checkpoint_mode == "hard",
+        "hard_checkpoint_ready": hard_ready,
+    }
+
+
 def export_bundle_api(config: GatewayConfig, payload: JSONDict) -> JSONDict:
     thread_id = cc.slugify(str(payload["thread_id"]))
     bundle_id = safe_bundle_id(str(payload.get("bundle_id") or new_bundle_id(thread_id)))
@@ -879,6 +919,7 @@ def make_handler(config: GatewayConfig) -> type[BaseHTTPRequestHandler]:
                         "auth_required": config.auth_token is not None,
                         "transport": transport_contract(config),
                         "identity": identity_contract(config),
+                        "endpoint_compatibility": endpoint_compatibility(config, endpoint),
                     },
                 )
                 return

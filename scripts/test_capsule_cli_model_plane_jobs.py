@@ -260,8 +260,12 @@ def main() -> None:
             profile_status_payload = json.loads(profile_status.stdout)
             if profile_status_payload.get("transport_verified") is not True:
                 raise AssertionError("gateway profile status check did not verify transport")
+            if profile_status_payload.get("endpoint_verified") is not True:
+                raise AssertionError("soft gateway profile status check should not require hard endpoint readiness")
             if profile_status_payload.get("endpoint_id") != "local-soft":
                 raise AssertionError("gateway profile status check did not report expected endpoint")
+            if profile_status_payload.get("endpoint_compatibility", {}).get("slot_probe", {}).get("status") != "slot_probe_missing":
+                raise AssertionError("gateway profile status check did not expose missing slot probe status for soft endpoint")
 
             gateway_export_job = jobs / "gateway-export.json"
             write_job(

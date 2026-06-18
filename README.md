@@ -296,6 +296,8 @@ py -3 .\scripts\capsule_cli.py gateway command .\examples\model-plane\gateway-la
 py -3 .\scripts\capsule_cli.py gateway check .\examples\model-plane\gateway-launch-profile.example.json --json
 ```
 
+`gateway check --json` verifies the running transport contract and reports `endpoint_verified`. Hard checkpoint profiles require the gateway status to advertise a ready endpoint compatibility record from a successful slot probe.
+
 Gateway upload/download can also be driven by Model Plane job packets:
 
 ```powershell

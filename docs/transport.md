@@ -100,6 +100,24 @@ The response includes a versioned `transport` object:
 }
 ```
 
+The same response includes `endpoint_compatibility` so launchers can tell whether hard checkpoint controls are safe to expose for this gateway instance:
+
+```json
+{
+  "endpoint_compatibility": {
+    "endpoint_id": "local-llamacpp",
+    "slot_save_restore": true,
+    "slot_probe": {
+      "status": "slot_probe_ok",
+      "response_shape": "list",
+      "slot_count": 1
+    },
+    "hard_checkpoint_required": true,
+    "hard_checkpoint_ready": true
+  }
+}
+```
+
 The same response includes an `identity` object for thread continuity:
 
 ```json

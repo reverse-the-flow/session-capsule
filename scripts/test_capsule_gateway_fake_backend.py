@@ -98,13 +98,14 @@ class FakeBackendHandler(BaseHTTPRequestHandler):
         self.send_json({"error": "not found"}, status=404)
 
 
-def run_cli(state_dir: Path, *args: str) -> None:
+def run_cli(state_dir: Path, *args: str) -> subprocess.CompletedProcess[str]:
     command = [sys.executable, str(CLI), "--state-dir", str(state_dir), *args]
     result = subprocess.run(command, cwd=ROOT, text=True, capture_output=True, check=False)
     if result.returncode != 0:
         raise AssertionError(
             f"CLI failed: {' '.join(command)}\nSTDOUT:\n{result.stdout}\nSTDERR:\n{result.stderr}"
         )
+    return result
 
 
 def post_json(url: str, payload: dict[str, Any], headers: dict[str, str]) -> tuple[dict[str, Any], dict[str, str]]:
@@ -229,6 +230,7 @@ def main() -> None:
                 "--context-limit",
                 "8192",
             )
+            run_cli(state, "endpoint", "doctor", "local-llamacpp", "--strict")
             run_cli(state, "prefill", "create", "--endpoint", "local-llamacpp", "--name", "user_default", "--input", str(prefill_path), "--soft")
 
             config = capsule_gateway.GatewayConfig(
@@ -258,6 +260,13 @@ def main() -> None:
             status = get_json(f"{gateway_url}/api/capsules/status", auth_headers)
             if status.get("auth_required") is not True:
                 raise AssertionError("gateway status did not report enabled auth")
+            endpoint_compatibility = status.get("endpoint_compatibility", {})
+            if endpoint_compatibility.get("endpoint_id") != "local-llamacpp":
+                raise AssertionError("gateway status did not expose endpoint compatibility for the configured endpoint")
+            if endpoint_compatibility.get("slot_probe", {}).get("status") != "slot_probe_ok":
+                raise AssertionError("gateway status did not expose successful endpoint slot probe status")
+            if endpoint_compatibility.get("hard_checkpoint_ready") is not True:
+                raise AssertionError("gateway status did not mark hard checkpoint endpoint as ready")
             transport = status.get("transport", {})
             if transport.get("api_version") != "0.1":
                 raise AssertionError("gateway status did not expose transport API version")
@@ -311,6 +320,56 @@ def main() -> None:
                 raise AssertionError("gateway identity status did not expose opencode minimum metadata")
             if identity.get("fallback", {}).get("continuity") != "best_effort":
                 raise AssertionError("gateway identity status did not describe generated id fallback")
+
+            gateway_token_path = Path(temp) / "gateway-token.txt"
+            gateway_token_path.write_text(gateway_token + "\n", encoding="utf-8")
+            gateway_profile = Path(temp) / "hard-gateway-profile.json"
+            gateway_profile.write_text(
+                json.dumps(
+                    {
+                        "schema_version": "0.1",
+                        "profile_id": "hard-gateway-profile",
+                        "profile_type": "session_capsule_gateway",
+                        "created_at": "2026-06-18T12:00:00-05:00",
+                        "gateway": {
+                            "state_dir": str(state),
+                            "endpoint_id": "local-llamacpp",
+                            "host": "127.0.0.1",
+                            "port": gateway.server_port,
+                            "checkpoint_mode": "hard",
+                            "slot": 0,
+                            "timeout_seconds": 20,
+                            "max_bundle_bytes": "10000000B",
+                            "cors_allow_origin": "http://127.0.0.1:3000",
+                        },
+                        "transport": {
+                            "openai_base_url": f"{gateway_url}/v1",
+                            "status_url": f"{gateway_url}/api/capsules/status",
+                            "require_status_transport": True,
+                        },
+                        "security": {
+                            "request_auth": {"source": "file", "ref": str(gateway_token_path)},
+                            "bundle_signing": {
+                                "source": "file",
+                                "ref": str(signature_key),
+                                "key_id": "gateway-test",
+                                "require_on_import": False,
+                            },
+                        },
+                    },
+                    indent=2,
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            gateway_check = run_cli(state, "gateway", "check", str(gateway_profile), "--json")
+            gateway_check_payload = json.loads(gateway_check.stdout)
+            if gateway_check_payload.get("transport_verified") is not True:
+                raise AssertionError("hard gateway profile check did not verify transport")
+            if gateway_check_payload.get("endpoint_verified") is not True:
+                raise AssertionError("hard gateway profile check did not verify endpoint readiness")
+            if gateway_check_payload.get("endpoint_compatibility", {}).get("hard_checkpoint_ready") is not True:
+                raise AssertionError("hard gateway profile check did not include hard checkpoint readiness")
 
             first_payload = {
                 "model": "fake-model",
