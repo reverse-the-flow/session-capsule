@@ -19,7 +19,7 @@ It performs:
 - state-location help and `state info` smoke test
 - fake `llama.cpp` endpoint doctor slot probe, endpoint compatibility matrix, hard capsule save/restore, shutdown job, and failed-restore fallback smoke test
 - state-relative ledger, prefill, and hard snapshot reference smoke test
-- `.scap` export/import/verify, dry-run sizing, endpoint compatibility warning, signature, and tamper-rejection smoke test
+- `.scap` export/import/verify, dry-run sizing, endpoint compatibility warning, signature, sealed envelope, and tamper-rejection smoke test
 - `.scap` import thread-id override and ref remapping smoke test
 - `.scap` redacted export/import smoke test for metadata-only transcript sharing
 - storage config, pinning, stats, and GC smoke test

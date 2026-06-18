@@ -59,10 +59,57 @@ def main() -> None:
         bundle_path = temp_path / "thread.scap"
         redacted_bundle_path = temp_path / "thread-redacted.scap"
         signed_bundle_path = temp_path / "thread-signed.scap"
+        sealed_bundle_path = temp_path / "thread-sealed.scap"
+        unsealed_bundle_path = temp_path / "thread-unsealed.scap"
         signature_key_path = temp_path / "signature.key"
+        age_identity_path = temp_path / "age-identity.txt"
+        fake_age_path = temp_path / "fake-age.cmd"
 
         prefill_path.write_text("Stable source-only user prefill.", encoding="utf-8")
         signature_key_path.write_text("test-local-signing-key", encoding="utf-8")
+        age_identity_path.write_text("AGE-SECRET-KEY-test\n", encoding="utf-8")
+        fake_age_path.write_text(
+            "\n".join(
+                [
+                    "@echo off",
+                    "setlocal",
+                    "set \"OUT=\"",
+                    "set \"INPUT=\"",
+                    ":loop",
+                    "if \"%~1\"==\"\" goto done",
+                    "if \"%~1\"==\"-o\" (",
+                    "  set \"OUT=%~2\"",
+                    "  shift",
+                    "  shift",
+                    "  goto loop",
+                    ")",
+                    "if \"%~1\"==\"-r\" (",
+                    "  shift",
+                    "  shift",
+                    "  goto loop",
+                    ")",
+                    "if \"%~1\"==\"-i\" (",
+                    "  shift",
+                    "  shift",
+                    "  goto loop",
+                    ")",
+                    "if \"%~1\"==\"-d\" (",
+                    "  shift",
+                    "  goto loop",
+                    ")",
+                    "set \"INPUT=%~1\"",
+                    "shift",
+                    "goto loop",
+                    ":done",
+                    "if \"%OUT%\"==\"\" exit /b 2",
+                    "if \"%INPUT%\"==\"\" exit /b 3",
+                    "copy /Y \"%INPUT%\" \"%OUT%\" >nul",
+                    "exit /b %ERRORLEVEL%",
+                ]
+            )
+            + "\n",
+            encoding="utf-8",
+        )
 
         run_cli(
             source_state,
@@ -139,6 +186,47 @@ def main() -> None:
         unsigned_policy_failure = run_cli_failure(source_state, "bundle-policy", str(bundle_path), "--require-signature")
         if "bundle signature is absent" not in unsigned_policy_failure.stdout:
             raise AssertionError("bundle policy did not reject unsigned bundle")
+
+        run_cli(
+            source_state,
+            "seal",
+            str(bundle_path),
+            "--out",
+            str(sealed_bundle_path),
+            "--age-recipient",
+            "age1testrecipient",
+            "--age-bin",
+            str(fake_age_path),
+        )
+        sealed_inspect_payload = json.loads(run_cli(source_state, "inspect", "--bundle", str(sealed_bundle_path), "--json").stdout)
+        if sealed_inspect_payload.get("share_policy", {}).get("classification") != "encrypted":
+            raise AssertionError("sealed bundle did not inspect as encrypted")
+        if sealed_inspect_payload.get("share_policy", {}).get("trusted_transport_required") is not False:
+            raise AssertionError("sealed bundle still required trusted transport")
+        if sealed_inspect_payload.get("integrity", {}).get("encryption", {}).get("backend") != "age":
+            raise AssertionError("sealed bundle did not record age backend metadata")
+        sealed_policy = run_cli(source_state, "bundle-policy", str(sealed_bundle_path), "--preset", "sealed")
+        if "policy passed: yes" not in sealed_policy.stdout:
+            raise AssertionError("sealed bundle did not pass sealed policy")
+        sealed_import_failure = run_cli_failure(source_state, "import", str(sealed_bundle_path))
+        if "Sealed bundles must be unsealed before import" not in sealed_import_failure.stderr:
+            raise AssertionError("sealed bundle import did not require explicit unseal")
+        run_cli(
+            source_state,
+            "unseal",
+            str(sealed_bundle_path),
+            "--out",
+            str(unsealed_bundle_path),
+            "--age-identity",
+            str(age_identity_path),
+            "--age-bin",
+            str(fake_age_path),
+        )
+        if unsealed_bundle_path.read_bytes() != bundle_path.read_bytes():
+            raise AssertionError("unsealed bundle did not match original bundle bytes")
+        unsealed_verify = run_cli(source_state, "verify", str(unsealed_bundle_path))
+        if "verified: yes" not in unsealed_verify.stdout:
+            raise AssertionError("unsealed bundle did not verify")
 
         run_cli(source_state, "export", "--thread", "export-thread", "--out", str(redacted_bundle_path), "--redact-transcript")
         with zipfile.ZipFile(redacted_bundle_path, "r") as bundle:

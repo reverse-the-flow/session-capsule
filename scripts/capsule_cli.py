@@ -17,6 +17,7 @@ import re
 import shutil
 import subprocess
 import sys
+import tempfile
 import zipfile
 from dataclasses import dataclass
 from datetime import datetime
@@ -382,24 +383,27 @@ For gateway upload/download transport:
     "security": """Security status:
   implemented: per-entry sha256 file_digests in exported .scap bundles
   implemented: optional HMAC-SHA256 bundle signatures
+  implemented: external age-compatible sealed bundle envelopes
   implemented: metadata-only redacted transcript export
   implemented: capsule verify rejects duplicate or digest-mismatched bundle entries
   implemented: import verifies bundles that include file_digests
   implemented: import warns on local endpoint metadata conflicts
-  not implemented yet: encryption or sealed user-carried blobs
+  not implemented yet: hosted provider-side sealed capsules
 
 Commands:
   py -3 .\\scripts\\capsule_cli.py verify .\\research-loop.scap
   py -3 .\\scripts\\capsule_cli.py inspect --bundle .\\research-loop.scap --json
   py -3 .\\scripts\\capsule_cli.py bundle-policy .\\research-loop.scap --preset signed-metadata-only
   py -3 .\\scripts\\capsule_cli.py verify .\\research-loop.scap --signature-key-file .\\capsule-signing.key --require-signature
+  py -3 .\\scripts\\capsule_cli.py seal .\\research-loop.scap --out .\\research-loop.sealed.scap --age-recipient age1...
+  py -3 .\\scripts\\capsule_cli.py unseal .\\research-loop.sealed.scap --out .\\research-loop.unsealed.scap --age-identity .\\age-identity.txt
 
 Key handling:
   --signature-key-file reads a local key file for this command only
   --signature-key-env reads a key from an environment variable
   keys are not written into .capsules state
 
-HMAC signing proves possession of the shared key. Encryption and sealed blobs are future envelope layers.""",
+HMAC signing proves possession of the shared key. Sealing delegates encryption to an external age-compatible command instead of implementing local crypto.""",
     "model-plane": """Model Plane should supervise Session Capsules, not become the gateway.
 
 Model Plane owns:
@@ -2833,6 +2837,8 @@ def import_bundle(args: argparse.Namespace) -> int:
 
     with zipfile.ZipFile(bundle_path, "r") as bundle:
         bundle_manifest = json.loads(bundle.read("manifest.json").decode("utf-8"))
+        if bundle_manifest.get("bundle_type") == "session-capsules.sealed":
+            raise RuntimeError("Sealed bundles must be unsealed before import")
         source_thread_id = str(bundle_manifest["thread_id"])
         thread_id = slugify(str(args.thread_id)) if args.thread_id else source_thread_id
         target_ledger = store.ledger_path(thread_id)
@@ -2887,6 +2893,135 @@ def verify_bundle(args: argparse.Namespace) -> int:
     if result.get("reason"):
         print(f"reason: {result['reason']}")
     return 0 if result["verified"] else 1
+
+
+def run_external_crypto(command: list[str]) -> None:
+    result = subprocess.run(command, check=False, text=True, capture_output=True)
+    if result.returncode != 0:
+        message = result.stderr.strip() or result.stdout.strip() or f"exit code {result.returncode}"
+        raise RuntimeError(f"External encryption command failed: {message}")
+
+
+def seal_bundle(args: argparse.Namespace) -> int:
+    source = args.bundle.resolve()
+    out_path = args.out.resolve()
+    if not source.exists():
+        raise FileNotFoundError(f"Bundle not found: {source}")
+    source_integrity = verify_bundle_integrity(source)
+    if not source_integrity["verified"]:
+        raise RuntimeError(f"Bundle integrity verification failed: {source_integrity.get('reason')}")
+    if out_path.exists() and not args.force:
+        raise FileExistsError(f"Sealed bundle already exists: {out_path}")
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+
+    with tempfile.TemporaryDirectory(prefix="session-capsules-seal-") as temp:
+        encrypted_payload = Path(temp) / "payload.scap.age"
+        run_external_crypto(
+            [
+                args.age_bin,
+                "-r",
+                args.age_recipient,
+                "-o",
+                str(encrypted_payload),
+                str(source),
+            ]
+        )
+        manifest: JSONDict = {
+            "schema_version": "0.1",
+            "bundle_type": "session-capsules.sealed",
+            "created_at": now_iso(),
+            "sealed_format": "age-payload-v0",
+            "payload_ref": "payload.scap.age",
+            "source_bundle_bytes": source.stat().st_size,
+            "source_bundle_sha256": digest_file(source),
+            "integrity": {
+                "file_digest_algorithm": "sha256",
+                "signature": None,
+                "encryption": {
+                    "backend": "age",
+                    "mode": "recipient",
+                    "payload_ref": "payload.scap.age",
+                    "recipient": args.age_recipient,
+                    "source_bundle_sha256": digest_file(source),
+                },
+                "notes": [
+                    "Payload encryption is delegated to an external age-compatible command.",
+                    "Model weights are never included in sealed bundles.",
+                ],
+            },
+            "file_digests": {
+                "payload.scap.age": digest_file(encrypted_payload),
+            },
+            "notes": [
+                "Unseal before import; sealed envelopes are not imported directly.",
+            ],
+        }
+        with zipfile.ZipFile(out_path, "w", compression=zipfile.ZIP_DEFLATED) as sealed:
+            add_text_to_zip(sealed, "manifest.json", json.dumps(manifest, indent=2) + "\n")
+            add_file_to_zip(sealed, encrypted_payload, "payload.scap.age")
+
+    print(f"sealed bundle: {out_path}")
+    print(f"source: {source}")
+    print(f"backend: age")
+    print(f"sealed bytes: {out_path.stat().st_size}")
+    print(f"sealed size: {format_bytes(out_path.stat().st_size)}")
+    return 0
+
+
+def sealed_bundle_manifest(sealed_path: Path) -> JSONDict:
+    if not sealed_path.exists():
+        raise FileNotFoundError(f"Sealed bundle not found: {sealed_path}")
+    integrity = verify_bundle_integrity(sealed_path)
+    if not integrity["verified"]:
+        raise RuntimeError(f"Sealed bundle integrity verification failed: {integrity.get('reason')}")
+    with zipfile.ZipFile(sealed_path, "r") as sealed:
+        manifest = json.loads(sealed.read("manifest.json").decode("utf-8"))
+    if manifest.get("bundle_type") != "session-capsules.sealed":
+        raise RuntimeError("Bundle is not a sealed envelope")
+    integrity = manifest.get("integrity", {})
+    encryption = integrity.get("encryption") if isinstance(integrity, dict) else None
+    if not isinstance(encryption, dict) or encryption.get("backend") != "age":
+        raise RuntimeError("Sealed bundle does not declare an age encryption backend")
+    return manifest
+
+
+def unseal_bundle(args: argparse.Namespace) -> int:
+    sealed_path = args.bundle.resolve()
+    out_path = args.out.resolve()
+    manifest = sealed_bundle_manifest(sealed_path)
+    if out_path.exists() and not args.force:
+        raise FileExistsError(f"Output bundle already exists: {out_path}")
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    payload_ref = safe_zip_name(str(manifest.get("payload_ref") or "payload.scap.age"))
+
+    with tempfile.TemporaryDirectory(prefix="session-capsules-unseal-") as temp:
+        encrypted_payload = Path(temp) / "payload.scap.age"
+        with zipfile.ZipFile(sealed_path, "r") as sealed:
+            encrypted_payload.write_bytes(sealed.read(payload_ref))
+        run_external_crypto(
+            [
+                args.age_bin,
+                "-d",
+                "-i",
+                str(args.age_identity),
+                "-o",
+                str(out_path),
+                str(encrypted_payload),
+            ]
+        )
+
+    expected_digest = manifest.get("source_bundle_sha256")
+    actual_digest = digest_file(out_path)
+    if expected_digest and actual_digest != expected_digest:
+        out_path.unlink(missing_ok=True)
+        raise RuntimeError(f"Unsealed bundle digest mismatch: expected {expected_digest}, got {actual_digest}")
+    output_integrity = verify_bundle_integrity(out_path)
+    if not output_integrity["verified"]:
+        raise RuntimeError(f"Unsealed bundle integrity verification failed: {output_integrity.get('reason')}")
+    print(f"unsealed bundle: {out_path}")
+    print(f"source sealed bundle: {sealed_path}")
+    print(f"sha256: {actual_digest}")
+    return 0
 
 
 def config_init(args: argparse.Namespace) -> int:
@@ -4349,6 +4484,22 @@ def build_parser() -> argparse.ArgumentParser:
     verify_cmd.add_argument("--signature-key-env")
     verify_cmd.add_argument("--require-signature", action="store_true")
     verify_cmd.set_defaults(func=verify_bundle)
+
+    seal_cmd = subcommands.add_parser("seal", help="Seal a .scap bundle with an external age-compatible encryption command.")
+    seal_cmd.add_argument("bundle", type=Path)
+    seal_cmd.add_argument("--out", type=Path, required=True)
+    seal_cmd.add_argument("--age-recipient", required=True, help="age recipient string. This is public key material.")
+    seal_cmd.add_argument("--age-bin", default="age", help="age-compatible executable to run.")
+    seal_cmd.add_argument("--force", action="store_true")
+    seal_cmd.set_defaults(func=seal_bundle)
+
+    unseal_cmd = subcommands.add_parser("unseal", help="Unseal an age-encrypted .scap envelope into an importable .scap bundle.")
+    unseal_cmd.add_argument("bundle", type=Path)
+    unseal_cmd.add_argument("--out", type=Path, required=True)
+    unseal_cmd.add_argument("--age-identity", type=Path, required=True, help="age identity file used by the external decrypt command.")
+    unseal_cmd.add_argument("--age-bin", default="age", help="age-compatible executable to run.")
+    unseal_cmd.add_argument("--force", action="store_true")
+    unseal_cmd.set_defaults(func=unseal_bundle)
 
     policy_cmd = subcommands.add_parser("bundle-policy", help="Check a .scap bundle against share/import policy requirements.")
     policy_cmd.add_argument("bundle", type=Path)

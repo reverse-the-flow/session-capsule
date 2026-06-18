@@ -478,7 +478,7 @@ Implementation steps:
 - Reject duplicate zip entries.
 - Keep digest verification separate from cryptographic signing.
 - Add a signature envelope for shared-key authenticity.
-- Add a later encryption or sealed-blob envelope for user-carried capsules.
+- Add a sealed envelope that delegates encryption to an external backend instead of inventing local crypto.
 - Keep model weights outside the capsule envelope.
 
 Exit criteria:
@@ -486,7 +486,8 @@ Exit criteria:
 - A user can verify that a `.scap` bundle's entries match the exported manifest.
 - Import fails before extraction if a digest-indexed bundle is corrupted or contains duplicate entries.
 - A user can sign a `.scap` bundle with an explicit local key source.
-- The roadmap clearly distinguishes implemented integrity/signing from future encryption.
+- A user can seal and unseal a `.scap` bundle through an external encryption backend.
+- The roadmap clearly distinguishes local sealed envelopes from future hosted/provider-side sealed capsules.
 
 Initial status:
 
@@ -506,8 +507,12 @@ Initial status:
 - Gateway bundle listings expose `share_safety`, `trusted_transport_required`, `transcript_included`, `prefill_sources_included`, and signing/encryption metadata.
 - `capsule_gateway.py --signature-key-file KEY --require-bundle-signature` applies signing and required verification to gateway transport.
 - `import BUNDLE.scap` verifies bundles that include `file_digests` before extracting state files.
+- `seal BUNDLE.scap --age-recipient RECIPIENT --out BUNDLE.sealed.scap` wraps an externally encrypted payload in an inspectable sealed envelope.
+- `unseal BUNDLE.sealed.scap --age-identity IDENTITY --out BUNDLE.scap` decrypts the payload and verifies the recovered digest before import.
+- `bundle-policy BUNDLE.sealed.scap --preset sealed` passes when the envelope records encryption metadata.
 - `scripts/test_capsule_cli_export_import.py` validates successful verification, signature checks, and tamper rejection.
-- Encryption and sealed user-carried blobs are not implemented yet; redaction is metadata-only and not cryptographic sealing.
+- `scripts/test_capsule_cli_export_import.py` validates the external sealing command contract with a fake age-compatible backend.
+- Hosted/provider-side sealed capsules and user-carried runtime blobs are not implemented yet; redaction is metadata-only and not cryptographic sealing.
 
 ## Stage 12: Gateway Access Control
 
@@ -714,4 +719,4 @@ Initial status:
 
 - Which live `llama.cpp` server builds should be captured with `endpoint doctor` and listed in the endpoint matrix?
 - Which native opencode hook can replace generated provider configs once opencode exposes stable per-session metadata?
-- Which cross-platform encryption backend should provide the future sealed `.scap` envelope without inventing local crypto?
+- Which production age-compatible backend and key-management UX should be recommended for sealed `.scap` transport?

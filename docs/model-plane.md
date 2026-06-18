@@ -160,7 +160,7 @@ py -3 .\scripts\capsule_cli.py bundle-policy .\research-loop.scap --preset metad
 
 For gateway-stored bundles, `GET /api/capsules/bundles` exposes the same classification as `share_safety` plus `trusted_transport_required`, plaintext-content flags, snapshot inclusion, signing, and encryption metadata. `metadata_only_not_encrypted` means transcript and prefill source text were omitted, but the bundle is still not sealed. `contains_plaintext_content` and `contains_unencrypted_snapshots` should stay behind trusted transport unless a later encryption envelope is present.
 
-For direct CLI-driven uploads, pass `--policy-preset metadata-only`, `--policy-preset signed-metadata-only`, or `--policy-preset sealed` to `gateway upload` to fail locally before sending bytes. The `sealed` preset is intentionally forward-looking: it will fail until an encryption envelope exists.
+For direct CLI-driven uploads, pass `--policy-preset metadata-only`, `--policy-preset signed-metadata-only`, or `--policy-preset sealed` to `gateway upload` to fail locally before sending bytes. The `sealed` preset requires an encrypted envelope such as one created by `capsule_cli.py seal`.
 
 For gateway-driven uploads, put the same intent in `security.bundle_import_policy`. `gateway command` renders it into `--bundle-policy-*` flags, and `gateway check` verifies the running gateway advertises the same `transport.import_policy`.
 

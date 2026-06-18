@@ -310,7 +310,7 @@ py -3 .\scripts\capsule_cli.py bundle-policy .\research-loop.scap --preset metad
 
 Inspection reports whether transcript or prefill source text is present in plaintext, whether hard snapshots are included, whether the bundle is redacted, signed, or encrypted, and whether trusted transport is required. Gateway bundle listings expose the same classification as `share_safety`.
 
-`bundle-policy` is the exit-code gate for launchers and scripts. Preset `metadata-only` rejects plaintext transcript/prefill source content and snapshots; `signed-metadata-only` also requires a signature; `sealed` requires a future encryption envelope.
+`bundle-policy` is the exit-code gate for launchers and scripts. Preset `metadata-only` rejects plaintext transcript/prefill source content and snapshots; `signed-metadata-only` also requires a signature; `sealed` requires an encrypted envelope.
 
 Verify a signed bundle with an explicit key:
 
@@ -319,6 +319,16 @@ py -3 .\scripts\capsule_cli.py verify .\research-loop.scap --signature-key-file 
 ```
 
 The digest index proves archive integrity for the exported files. HMAC signing proves possession of the shared signing key.
+
+Seal a bundle with an external age-compatible command:
+
+```powershell
+py -3 .\scripts\capsule_cli.py seal .\research-loop.scap --out .\research-loop.sealed.scap --age-recipient age1...
+py -3 .\scripts\capsule_cli.py bundle-policy .\research-loop.sealed.scap --preset sealed
+py -3 .\scripts\capsule_cli.py unseal .\research-loop.sealed.scap --out .\research-loop.unsealed.scap --age-identity .\age-identity.txt
+```
+
+The sealed file is a small inspectable envelope containing `manifest.json` plus an externally encrypted payload. Import requires an explicit `unseal` step first.
 
 ## Delete
 
@@ -363,6 +373,7 @@ Implemented now:
 
 - per-entry SHA-256 file digests in bundle `manifest.json`
 - optional HMAC-SHA256 signatures in bundle `manifest.json`
+- sealed bundle envelopes using an external age-compatible command
 - metadata-only redacted transcript export
 - `capsule verify BUNDLE.scap`
 - import-time digest verification for bundles that carry `file_digests`
@@ -373,10 +384,10 @@ Implemented now:
 
 Not implemented yet:
 
-- encryption
-- sealed user-carried blobs
+- hosted/provider-side sealed capsules
+- user-carried runtime blobs
 
-Encryption and sealed-blob features should build on the digest and signature envelope instead of replacing it.
+The local sealed envelope builds on the digest and signature envelope instead of replacing it. The repo delegates encryption to an external command and does not implement its own cryptographic primitive.
 
 ## Model Plane Job Packets
 

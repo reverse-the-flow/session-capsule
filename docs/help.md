@@ -288,7 +288,7 @@ py -3 .\scripts\capsule_cli.py bundle-policy .\research-loop.scap --preset metad
 
 Inspection reports plaintext transcript or prefill source content, hard snapshot inclusion, redaction status, signing, encryption status, and whether trusted transport is required.
 
-`bundle-policy` is the script-friendly gate. Preset `metadata-only` rejects plaintext content and snapshots, `signed-metadata-only` also requires a signature, and `sealed` currently fails unless a future encryption envelope is present.
+`bundle-policy` is the script-friendly gate. Preset `metadata-only` rejects plaintext content and snapshots, `signed-metadata-only` also requires a signature, and `sealed` requires an encrypted envelope.
 
 Gateway-side import policy uses the same presets:
 
@@ -303,6 +303,13 @@ Sign and verify with an explicit local key file:
 ```powershell
 py -3 .\scripts\capsule_cli.py export --thread research-loop --out .\research-loop.scap --signature-key-file .\capsule-signing.key --signature-key-id local
 py -3 .\scripts\capsule_cli.py verify .\research-loop.scap --signature-key-file .\capsule-signing.key --require-signature
+```
+
+Seal and unseal with an external age-compatible command:
+
+```powershell
+py -3 .\scripts\capsule_cli.py seal .\research-loop.scap --out .\research-loop.sealed.scap --age-recipient age1...
+py -3 .\scripts\capsule_cli.py unseal .\research-loop.sealed.scap --out .\research-loop.unsealed.scap --age-identity .\age-identity.txt
 ```
 
 Preview export size without writing:
@@ -324,6 +331,7 @@ Current boundary:
 
 - implemented: digest-based integrity checks
 - implemented: optional HMAC-SHA256 signatures
+- implemented: external age-compatible sealed bundle envelopes
 - implemented: metadata-only redacted transcript export
 - key sources: `--signature-key-file` or `--signature-key-env`
 - keys are not stored in `.capsules`
@@ -334,9 +342,9 @@ Current boundary:
 - bundle inspection classifies transported bundles for share/import policy before upload or import
 - bundle policy checks fail with a nonzero exit code when a bundle does not meet the requested share/import requirements
 - gateway import policy can enforce the same checks server-side before extraction
-- not implemented yet: encryption or sealed user-carried blobs
+- not implemented yet: hosted/provider-side sealed capsules or user-carried runtime blobs
 
-Redaction is not encryption. It removes transcript and prefill source text, but metadata, digests, token ranges, endpoint ids, and included hard snapshots may still be sensitive.
+Redaction is not encryption. It removes transcript and prefill source text, but metadata, digests, token ranges, endpoint ids, and included hard snapshots may still be sensitive. Local sealing delegates encryption to an external backend rather than implementing crypto in this repo.
 
 ## Model Plane
 

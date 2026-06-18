@@ -179,7 +179,7 @@ By default, `.scap` export is ledger-only: it includes endpoint metadata, thread
 
 `inspect --bundle` reports the bundle's share/import posture: plaintext transcript or prefill source content, snapshot inclusion, redaction, signing, encryption status, and whether trusted transport is required.
 
-`bundle-policy` turns that posture into an exit-code gate for scripts and launchers. `--preset metadata-only` rejects transcript/prefill plaintext and snapshots. `--preset signed-metadata-only` also requires a signature. `--preset sealed` currently fails unless a future encryption envelope is present.
+`bundle-policy` turns that posture into an exit-code gate for scripts and launchers. `--preset metadata-only` rejects transcript/prefill plaintext and snapshots. `--preset signed-metadata-only` also requires a signature. `--preset sealed` requires an encrypted envelope.
 
 Import warns when the bundle endpoint id already exists locally with different runtime, model, tokenizer, context, slot, or URL metadata.
 
@@ -188,6 +188,14 @@ Optional HMAC signing uses an explicit key source and does not store secrets in 
 ```powershell
 py -3 .\scripts\capsule_cli.py export --thread research-loop-small --out .\research-loop-small.scap --signature-key-file .\capsule-signing.key --signature-key-id local
 py -3 .\scripts\capsule_cli.py verify .\research-loop-small.scap --signature-key-file .\capsule-signing.key --require-signature
+```
+
+Sealed envelopes delegate encryption to an external age-compatible command:
+
+```powershell
+py -3 .\scripts\capsule_cli.py seal .\research-loop-small.scap --out .\research-loop-small.sealed.scap --age-recipient age1...
+py -3 .\scripts\capsule_cli.py bundle-policy .\research-loop-small.sealed.scap --preset sealed
+py -3 .\scripts\capsule_cli.py unseal .\research-loop-small.sealed.scap --out .\research-loop-small.unsealed.scap --age-identity .\age-identity.txt
 ```
 
 The gateway can apply the same policy to upload/download transport:
