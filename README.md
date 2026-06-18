@@ -58,6 +58,7 @@ That matters most for:
 - [docs/benchmark-design.md](/X:/Experiments/session-capsules/docs/benchmark-design.md) - regime-safe benchmark plan for replay vs restore
 - [docs/mvp-plan.md](/X:/Experiments/session-capsules/docs/mvp-plan.md) - smallest viable architecture, controller/runtime split, and ephemeral-runtime constraint
 - [docs/roadmap.md](/X:/Experiments/session-capsules/docs/roadmap.md) - staged implementation path from CLI harness to local gateway and later integrations
+- [docs/v0-readiness.md](/X:/Experiments/session-capsules/docs/v0-readiness.md) - standalone v0 readiness audit, verification gate, and deliberate non-goals
 - [schemas/](/X:/Experiments/session-capsules/schemas) - draft JSON Schemas for capsule manifests, thread ledgers, and endpoint capabilities
 - [examples/](/X:/Experiments/session-capsules/examples) - matching example ledger, manifest, endpoint capability, integration, Model Plane job, and gateway launch-profile documents
 - [scripts/simulate_capsules.py](/X:/Experiments/session-capsules/scripts/simulate_capsules.py) - simple cost-growth simulator

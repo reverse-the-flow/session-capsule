@@ -130,6 +130,7 @@ More:
   capsule help transport
   capsule help security
   capsule help sealing
+  capsule help roadmap
   capsule help storage
   capsule help state
   capsule help model-plane""",
@@ -449,6 +450,25 @@ Boundary:
   local sealed envelopes are implemented
   hosted/provider-side sealed capsules are future work
   this repo delegates crypto to age instead of implementing cryptographic primitives""",
+    "roadmap": """Roadmap and readiness files:
+  docs/roadmap.md
+  docs/v0-readiness.md
+
+Standalone v0 readiness gate:
+  py -3 .\\scripts\\run_smoke_tests.py
+
+Current status:
+  no tracked open questions for standalone v0
+  local harness and gateway scope is implementation-complete
+  future provider/runtime work remains explicitly out of v0
+
+Deliberate non-goals:
+  hosted/provider-side sealed capsules
+  user-carried runtime snapshots portable across model backends
+  model weights inside capsule bundles
+  passive browser/app watchers
+  native opencode replacement before a provider-request/header hook exists
+  Model Plane owning model weights, live KV tensors, runtime slot layout, or inference loop""",
     "model-plane": """Model Plane should supervise Session Capsules, not become the gateway.
 
 Model Plane owns:

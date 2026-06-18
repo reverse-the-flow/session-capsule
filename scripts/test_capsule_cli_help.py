@@ -41,6 +41,7 @@ def main() -> None:
         "state",
         "security",
         "sealing",
+        "roadmap",
         "model-plane",
         "troubleshooting",
     ]:
@@ -169,6 +170,12 @@ def main() -> None:
         or "hosted/provider-side sealed capsules are future work" not in sealing
     ):
         raise AssertionError("sealing help did not explain key-reference transport boundary")
+
+    roadmap = run_cli("help", "roadmap")
+    if "docs/v0-readiness.md" not in roadmap or "run_smoke_tests.py" not in roadmap:
+        raise AssertionError("roadmap help did not include readiness doc and smoke gate")
+    if "provider-request/header hook" not in roadmap or "passive browser/app watchers" not in roadmap:
+        raise AssertionError("roadmap help did not include v0 non-goal boundary")
 
     troubleshooting = run_cli("help", "troubleshooting")
     if "restore_failed" not in troubleshooting:

@@ -86,8 +86,20 @@ The CLI help topics are:
 - `bundles`
 - `security`
 - `sealing`
+- `roadmap`
 - `model-plane`
 - `troubleshooting`
+
+## Roadmap And Readiness
+
+Use these files for the current implementation boundary:
+
+```text
+docs/roadmap.md
+docs/v0-readiness.md
+```
+
+`docs/v0-readiness.md` is the concise audit surface for standalone v0. It names the smoke-test gate and the deliberate non-goals, including hosted/provider-side sealed capsules, user-carried runtime blobs, passive watchers, and native opencode replacement before a provider-request/header hook exists.
 
 ## Persistent Config
 

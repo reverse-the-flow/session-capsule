@@ -587,6 +587,23 @@ def validate_opencode_native_hook_doc() -> None:
         raise ValidationError(f"opencode native hook doc missing required decision text: {', '.join(missing)}")
 
 
+def validate_v0_readiness_doc() -> None:
+    path = ROOT / "docs" / "v0-readiness.md"
+    text = path.read_text(encoding="utf-8")
+    required = [
+        "standalone v0 roadmap",
+        "py -3 .\\scripts\\run_smoke_tests.py",
+        "Deliberate Non-Goals",
+        "hosted/provider-side sealed capsules",
+        "passive watching",
+        "provider-request/header hook",
+        "model weights inside capsule bundles",
+    ]
+    missing = [phrase for phrase in required if phrase not in text]
+    if missing:
+        raise ValidationError(f"v0 readiness doc missing required audit text: {', '.join(missing)}")
+
+
 def main() -> None:
     validate_schema_files()
 
@@ -613,6 +630,7 @@ def main() -> None:
         else:
             validate_model_plane_job(path)
     validate_opencode_native_hook_doc()
+    validate_v0_readiness_doc()
 
     print("schema examples ok")
 

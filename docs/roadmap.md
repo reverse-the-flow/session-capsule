@@ -728,3 +728,13 @@ Initial status:
 ## Open Questions
 
 None currently tracked for the standalone v0 roadmap.
+
+## Readiness Audit
+
+The standalone v0 readiness audit lives in:
+
+```text
+docs/v0-readiness.md
+```
+
+It summarizes implemented scope, the smoke-test gate, and deliberate non-goals that should remain future provider/runtime work rather than being treated as missing v0 tasks.
