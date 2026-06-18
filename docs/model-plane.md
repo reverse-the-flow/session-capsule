@@ -138,6 +138,8 @@ py -3 .\scripts\capsule_cli.py --state-dir .\.capsules job run .\examples\model-
 py -3 .\scripts\capsule_cli.py --state-dir .\.capsules job run .\examples\model-plane\gateway-download-bundle.example.json --gateway-auth-token-file .\capsule-gateway-token
 ```
 
+For `gateway_import_bundle`, `params.thread_id` is the target local thread id to import as. This lets Model Plane avoid clobbering an existing local thread when a user uploads or reimports a `.scap` bundle.
+
 ## Fallback
 
 Every job must be safe to degrade:

@@ -167,6 +167,7 @@ py -3 .\scripts\capsule_cli.py export --thread research-loop-small --out .\resea
 py -3 .\scripts\capsule_cli.py export --thread research-loop-small --out .\research-loop-small.scap
 py -3 .\scripts\capsule_cli.py verify .\research-loop-small.scap
 py -3 .\scripts\capsule_cli.py import .\research-loop-small.scap
+py -3 .\scripts\capsule_cli.py import .\research-loop-small.scap --thread-id research-loop-copy
 ```
 
 By default, `.scap` export is ledger-only: it includes endpoint metadata, thread ledger, transcript, capsule manifests, prefill sources, and per-entry file digests, but omits hard snapshot blobs. Add `--include-snapshots` only when intentionally moving same-runtime local snapshot files.
@@ -261,6 +262,7 @@ DELETE /api/capsules/bundles/{bundle_id}
 Model Plane should read `/api/capsules/status` first and use the response's `transport` object to discover endpoint paths, upload size, content type, auth policy, signing policy, CORS policy, and enabled bundle capabilities.
 
 Bundles are stored under `.capsules/bundles/`. Export defaults to ledger-only; hard snapshots require `include_snapshots=true`.
+Imports can target a new local thread id with `thread_id` in JSON control calls or `X-Capsule-Import-Thread` on raw `.scap` uploads.
 
 Open WebUI and opencode setup examples live in:
 

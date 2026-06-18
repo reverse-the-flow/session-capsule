@@ -270,7 +270,10 @@ Upload size limit:
   py -3 .\\scripts\\capsule_gateway.py --state-dir .\\.capsules --endpoint local-llamacpp --max-bundle-bytes 5GB
 
 Browser preflight:
-  py -3 .\\scripts\\capsule_gateway.py --state-dir .\\.capsules --endpoint local-llamacpp --cors-allow-origin http://127.0.0.1:3000""",
+  py -3 .\\scripts\\capsule_gateway.py --state-dir .\\.capsules --endpoint local-llamacpp --cors-allow-origin http://127.0.0.1:3000
+
+Raw upload import target thread header:
+  X-Capsule-Import-Thread""",
     "storage": """Hard snapshots can be large. They are managed cache artifacts unless pinned.
 
 Defaults:
@@ -306,6 +309,9 @@ Include local hard snapshots only when intentionally moving same-runtime blobs:
 
 Import:
   py -3 .\\scripts\\capsule_cli.py import .\\research-loop.scap
+
+Import as a new local thread id:
+  py -3 .\\scripts\\capsule_cli.py import .\\research-loop.scap --thread-id research-loop-copy
 
 Import warns when an incoming endpoint id already exists locally with different runtime metadata.
 
@@ -377,6 +383,8 @@ Check a launched gateway:
 
 Gateway health endpoint for launch profiles:
   /api/capsules/status
+
+Gateway import jobs may use params.thread_id as the target local thread id for the imported bundle.
 
 Supported job packet types:
   resume_thread
@@ -2049,6 +2057,80 @@ def import_compatibility_warnings(store: Store, bundle: zipfile.ZipFile) -> list
     return warnings
 
 
+def rewrite_thread_ref(ref: str, source_thread: str, target_thread: str) -> str:
+    normalized = safe_zip_name(ref)
+    parts = Path(normalized).parts
+    if len(parts) >= 2 and parts[0] == "threads":
+        if parts[1] != source_thread:
+            raise RuntimeError(f"Unexpected thread ref in bundle: {ref}")
+        if source_thread != target_thread:
+            path = Path("threads") / target_thread
+            for part in parts[2:]:
+                path /= part
+            return path.as_posix()
+    return normalized
+
+
+def rewrite_import_json(data: JSONDict, store: Store, source_thread: str, target_thread: str) -> JSONDict:
+    if data.get("thread_id") == source_thread:
+        data["thread_id"] = target_thread
+    if isinstance(data.get("transcript_ref"), str):
+        data["transcript_ref"] = rewrite_thread_ref(data["transcript_ref"], source_thread, target_thread)
+
+    for link in data.get("capsules", []):
+        if isinstance(link, dict) and isinstance(link.get("manifest_ref"), str):
+            link["manifest_ref"] = rewrite_thread_ref(link["manifest_ref"], source_thread, target_thread)
+
+    for diff in data.get("open_diffs", []):
+        if isinstance(diff, dict) and isinstance(diff.get("transcript_ref"), str):
+            diff["transcript_ref"] = rewrite_thread_ref(diff["transcript_ref"], source_thread, target_thread)
+
+    storage = data.get("storage")
+    if isinstance(storage, dict):
+        snapshot_ref = storage.get("snapshot_ref")
+        if isinstance(snapshot_ref, str) and snapshot_ref:
+            storage["snapshot_ref"] = rewrite_thread_ref(snapshot_ref, source_thread, target_thread)
+            if storage.get("mode") == "local_file":
+                storage["runtime_snapshot_ref"] = str((store.root / storage["snapshot_ref"]).resolve())
+
+    return data
+
+
+def imported_entry_target(name: str, source_thread: str, target_thread: str) -> str | None:
+    if not (name.startswith("endpoints/") or name.startswith("prefills/") or name.startswith("threads/")):
+        return None
+    parts = Path(name).parts
+    if parts[0] == "threads":
+        if len(parts) < 2 or parts[1] != source_thread:
+            raise RuntimeError(f"Unexpected thread path in bundle: {name}")
+        if source_thread != target_thread:
+            path = Path("threads") / target_thread
+            for part in parts[2:]:
+                path /= part
+            return path.as_posix()
+    return name
+
+
+def imported_entry_bytes(
+    bundle: zipfile.ZipFile,
+    item: zipfile.ZipInfo,
+    target_name: str,
+    store: Store,
+    source_thread: str,
+    target_thread: str,
+) -> bytes:
+    payload = bundle.read(item.filename)
+    if not target_name.endswith(".json"):
+        return payload
+    try:
+        data = json.loads(payload.decode("utf-8"))
+    except json.JSONDecodeError:
+        return payload
+    if not isinstance(data, dict):
+        return payload
+    return pretty_json_bytes(rewrite_import_json(data, store, source_thread, target_thread))
+
+
 def export_bundle(args: argparse.Namespace) -> int:
     store = Store(args.state_dir)
     ledger = store.load_ledger(args.thread)
@@ -2134,9 +2216,8 @@ def import_bundle(args: argparse.Namespace) -> int:
 
     with zipfile.ZipFile(bundle_path, "r") as bundle:
         bundle_manifest = json.loads(bundle.read("manifest.json").decode("utf-8"))
-        thread_id = args.thread_id or bundle_manifest["thread_id"]
-        if args.thread_id is not None and args.thread_id != bundle_manifest["thread_id"]:
-            raise RuntimeError("Import thread-id override is not implemented yet because manifest refs are path-bound")
+        source_thread_id = str(bundle_manifest["thread_id"])
+        thread_id = slugify(str(args.thread_id)) if args.thread_id else source_thread_id
         target_ledger = store.ledger_path(thread_id)
         if target_ledger.exists() and not args.force:
             raise FileExistsError(f"Thread already exists: {thread_id}")
@@ -2144,19 +2225,21 @@ def import_bundle(args: argparse.Namespace) -> int:
 
         extracted = 0
         for item in bundle.infolist():
-            name = safe_zip_name(item.filename)
-            if not (name.startswith("endpoints/") or name.startswith("prefills/") or name.startswith("threads/")):
+            if item.is_dir():
                 continue
-            parts = Path(name).parts
-            if parts[0] == "threads" and len(parts) > 1 and parts[1] != bundle_manifest["thread_id"]:
-                raise RuntimeError(f"Unexpected thread path in bundle: {name}")
-            target = store.root / name
+            name = safe_zip_name(item.filename)
+            target_name = imported_entry_target(name, source_thread_id, thread_id)
+            if target_name is None:
+                continue
+            target = store.root / target_name
             target.parent.mkdir(parents=True, exist_ok=True)
-            target.write_bytes(bundle.read(item.filename))
+            target.write_bytes(imported_entry_bytes(bundle, item, target_name, store, source_thread_id, thread_id))
             extracted += 1
 
     print(f"imported bundle: {bundle_path}")
     print(f"thread: {thread_id}")
+    if thread_id != bundle_manifest["thread_id"]:
+        print(f"source thread: {bundle_manifest['thread_id']}")
     print(f"files: {extracted}")
     for warning in compatibility_warnings:
         print(f"warning: {warning}")
@@ -2749,7 +2832,7 @@ def verify_gateway_status_contract(profile: JSONDict, status: JSONDict) -> JSOND
             transport_checks["transport.cors.enabled"] = cors_status.get("enabled") is True
             transport_checks["transport.cors.allow_origin"] = cors_status.get("allow_origin") == expected_cors_origin
         capabilities = transport_status.get("capabilities", {})
-        for capability in ["export", "list", "download", "raw_upload_import", "stored_bundle_import", "delete"]:
+        for capability in ["export", "list", "download", "raw_upload_import", "stored_bundle_import", "delete", "thread_id_override"]:
             transport_checks[f"transport.capability.{capability}"] = capabilities.get(capability) is True
         for name, passed in transport_checks.items():
             if not passed:
@@ -2934,6 +3017,8 @@ def gateway_import_bundle_job(params: JSONDict, job_file: Path, auth_headers: di
         headers["Content-Type"] = str(params.get("content_type") or "application/vnd.session-capsule.scap")
         if params.get("bundle_id"):
             headers["X-Capsule-Bundle-Id"] = str(params["bundle_id"])
+        if params.get("thread_id"):
+            headers["X-Capsule-Import-Thread"] = str(params["thread_id"])
         if params.get("force"):
             headers["X-Capsule-Import-Force"] = "true"
         req = request.Request(
@@ -2954,6 +3039,8 @@ def gateway_import_bundle_job(params: JSONDict, job_file: Path, auth_headers: di
             "bundle_id": str(require_job_param(params, "bundle_id")),
             "force": bool(params.get("force", False)),
         }
+        if params.get("thread_id"):
+            payload["thread_id"] = str(params["thread_id"])
         data = gateway_request_json("POST", f"{base}/api/capsules/import", payload, timeout, auth_headers)
     print(json.dumps(data, indent=2))
     return 0

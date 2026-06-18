@@ -8,9 +8,11 @@
     "gateway_url": "http://127.0.0.1:8765",
     "bundle": "research-loop-small.scap",
     "bundle_id": "uploaded-research-loop-small",
+    "thread_id": "imported-research-loop-small",
     "force": false
   },
   "notes": [
-    "When bundle is supplied, the runner uploads raw .scap bytes to the gateway before import."
+    "When bundle is supplied, the runner uploads raw .scap bytes to the gateway before import.",
+    "thread_id is the target local thread id for this import."
   ]
 }

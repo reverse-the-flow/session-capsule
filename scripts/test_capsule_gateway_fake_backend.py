@@ -264,7 +264,7 @@ def main() -> None:
                 f"{gateway_url}/api/capsules/import",
                 "http://127.0.0.1:3000",
                 "POST",
-                "authorization, content-type, x-capsule-bundle-id, x-capsule-import-force",
+                "authorization, content-type, x-capsule-bundle-id, x-capsule-import-force, x-capsule-import-thread",
             )
             if preflight.get("Access-Control-Allow-Origin") != "http://127.0.0.1:3000":
                 raise AssertionError("gateway CORS preflight did not allow the configured Model Plane origin")
@@ -449,13 +449,19 @@ def main() -> None:
                 imported, import_headers = post_bytes(
                     f"{import_gateway_url}/api/capsules/import",
                     bundle_bytes,
-                    {**auth_headers, "X-Capsule-Bundle-Id": "uploaded-gateway-thread"},
+                    {
+                        **auth_headers,
+                        "X-Capsule-Bundle-Id": "uploaded-gateway-thread",
+                        "X-Capsule-Import-Thread": "gateway-thread-copy",
+                    },
                 )
                 if import_headers.get("X-Capsule-Import") != "ok":
                     raise AssertionError("gateway import endpoint did not mark response")
-                if imported["thread_id"] != "gateway-thread":
-                    raise AssertionError("imported bundle did not restore expected thread")
-                imported_ledger = imported_state / "threads" / "gateway-thread" / "thread-ledger.json"
+                if imported["thread_id"] != "gateway-thread-copy":
+                    raise AssertionError("raw upload import did not use target thread override")
+                if imported.get("source_thread_id") != "gateway-thread":
+                    raise AssertionError("raw upload import did not report source thread")
+                imported_ledger = imported_state / "threads" / "gateway-thread-copy" / "thread-ledger.json"
                 if not imported_ledger.exists():
                     raise AssertionError("raw upload import did not create thread ledger")
                 imported_bundle_list = get_json(f"{import_gateway_url}/api/capsules/bundles", auth_headers)
@@ -463,13 +469,13 @@ def main() -> None:
                     raise AssertionError("raw upload import did not retain uploaded bundle")
                 reimported, reimport_headers = post_json(
                     f"{import_gateway_url}/api/capsules/import",
-                    {"bundle_id": "uploaded-gateway-thread", "force": True},
+                    {"bundle_id": "uploaded-gateway-thread", "thread_id": "gateway-thread-stored", "force": True},
                     auth_headers,
                 )
                 if reimport_headers.get("X-Capsule-Import") != "ok":
                     raise AssertionError("stored bundle import endpoint did not mark response")
-                if reimported["thread_id"] != "gateway-thread":
-                    raise AssertionError("stored bundle import did not restore expected thread")
+                if reimported["thread_id"] != "gateway-thread-stored":
+                    raise AssertionError("stored bundle import did not use target thread override")
             finally:
                 import_gateway.shutdown()
                 import_gateway.server_close()

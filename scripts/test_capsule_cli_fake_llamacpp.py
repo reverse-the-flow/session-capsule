@@ -235,6 +235,25 @@ def main() -> None:
             if manifest["storage"]["snapshot_bytes"] != len(b"fake-slot-state"):
                 raise AssertionError("snapshot bytes were not recorded from fake save")
 
+            hard_bundle = Path(temp) / "fake-thread-hard.scap"
+            imported_state = Path(temp) / "imported-hard" / ".capsules"
+            run_cli(state, "export", "--thread", "fake-thread", "--out", str(hard_bundle), "--include-snapshots")
+            run_cli(imported_state, "import", str(hard_bundle), "--thread-id", "imported-fake")
+            imported_manifest_path = imported_state / "threads" / "imported-fake" / "manifests" / "cap_test.json"
+            if not imported_manifest_path.exists():
+                raise AssertionError("renamed hard import did not create remapped manifest")
+            imported_manifest = json.loads(imported_manifest_path.read_text(encoding="utf-8"))
+            imported_snapshot_ref = imported_manifest["storage"].get("snapshot_ref")
+            expected_snapshot_ref = "threads/imported-fake/snapshots/cap_test.bin"
+            if imported_snapshot_ref != expected_snapshot_ref:
+                raise AssertionError(f"renamed hard import did not rewrite snapshot_ref: {imported_snapshot_ref}")
+            imported_snapshot_path = imported_state / expected_snapshot_ref
+            if not imported_snapshot_path.exists():
+                raise AssertionError("renamed hard import did not restore snapshot blob")
+            expected_runtime_ref = str(imported_snapshot_path.resolve())
+            if imported_manifest["storage"].get("runtime_snapshot_ref") != expected_runtime_ref:
+                raise AssertionError("renamed hard import did not refresh runtime_snapshot_ref to imported state")
+
             paths = [event["path"] for event in FakeLlamaHandler.events]
             if "/slots/0" not in paths:
                 raise AssertionError("slot save request was not observed")

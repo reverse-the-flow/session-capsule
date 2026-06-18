@@ -243,6 +243,7 @@ Initial status:
 - Snapshot blobs are omitted by default and require `--include-snapshots`.
 - `export --dry-run` prints the planned bundle entries and estimated payload bytes before writing.
 - `import X.scap` restores endpoint, prefill, and thread files into a fresh state directory.
+- `import X.scap --thread-id NEW_ID` remaps thread-owned ledger, transcript, manifest, and snapshot refs under `threads/NEW_ID/`.
 - `import X.scap` warns when the bundle endpoint id already exists locally with different runtime, model, tokenizer, context, slot, or URL metadata.
 - `scripts/test_capsule_cli_export_import.py` validates a ledger-only bundle round trip, dry-run sizing, and endpoint compatibility warnings.
 
@@ -448,6 +449,7 @@ Initial status:
 - `GET /api/capsules/bundles` lists stored local bundles.
 - `GET /api/capsules/bundles/{bundle_id}` downloads a stored bundle with capsule-specific headers.
 - `POST /api/capsules/import` imports either an existing stored bundle or raw uploaded `.scap` bytes.
+- Gateway import accepts a target thread id through JSON `thread_id` or raw-upload `X-Capsule-Import-Thread`.
 - `DELETE /api/capsules/bundles/{bundle_id}` deletes a stored bundle without deleting imported thread state.
 - `/api/capsules/status` advertises a versioned `transport` object with endpoint paths, upload size, content type, auth policy, signing policy, and enabled bundle capabilities for Model Plane discovery.
 - Bundle ids are slugged and scoped to `.capsules/bundles/`.
@@ -457,6 +459,7 @@ Initial status:
 - `/api/capsules/status` advertises `transport.cors` so Model Plane can discover whether browser transfer is enabled for this gateway instance.
 - `scripts/test_capsule_gateway_fake_backend.py` validates export, list, download, raw upload import, and delete through the gateway.
 - Model Plane job packets can now invoke the gateway transport endpoints through `capsule_cli.py job run`.
+- `gateway_import_bundle` job packets can pass `params.thread_id` as the target local import thread id.
 - Protected gateway transport jobs authenticate through runner-side `--gateway-auth-token-file` or `--gateway-auth-token-env` flags.
 
 ## Stage 11: Bundle Integrity, Signing, And Sealing
@@ -579,6 +582,7 @@ Initial status:
 - `examples/thread-ledger.example.json`, `examples/capsule-manifest.example.json`, and `examples/prefill-manifest.example.json` use refs without the `.capsules/` prefix.
 - `scripts/validate_schema_examples.py` rejects absolute, escaping, or `.capsules/`-prefixed state refs.
 - `scripts/test_capsule_cli_fake_llamacpp.py` verifies runtime-written ledger, prefill, and snapshot refs are state-relative.
+- Import thread-id override uses the state-reference policy to remap thread-owned files while keeping prefill and endpoint records state-global.
 - `docs/protocol.md` and `docs/configuration.md` document the v0 state-reference policy.
 
 ## Stage 15: State Location Policy

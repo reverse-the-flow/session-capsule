@@ -60,6 +60,7 @@ The response includes a versioned `transport` object:
       "raw_upload_import": true,
       "stored_bundle_import": true,
       "delete": true,
+      "thread_id_override": true,
       "digest_verification": true,
       "hmac_sha256_signing": true,
       "require_signature_on_import": false
@@ -206,6 +207,16 @@ Invoke-RestMethod `
   -Body '{"bundle_id":"research-loop-20260618-112233-a1b2c3d4","force":false}'
 ```
 
+Import a stored bundle under a new local thread id:
+
+```powershell
+Invoke-RestMethod `
+  -Method Post `
+  -ContentType "application/json" `
+  -Uri http://127.0.0.1:8765/api/capsules/import `
+  -Body '{"bundle_id":"research-loop-20260618-112233-a1b2c3d4","thread_id":"research-loop-copy","force":false}'
+```
+
 Upload and import raw `.scap` bytes:
 
 ```powershell
@@ -217,9 +228,11 @@ Invoke-RestMethod `
   -Uri http://127.0.0.1:8765/api/capsules/import
 ```
 
+Use `X-Capsule-Import-Thread: research-loop-copy` to import raw uploaded bytes under a new local thread id.
+
 Use `X-Capsule-Import-Force: true` only when intentionally replacing an existing local thread.
 
-Imports verify bundles that include `file_digests`. Digest mismatch or duplicate zip entries fail before extraction.
+Imports verify bundles that include `file_digests`. Digest mismatch or duplicate zip entries fail before extraction. When a target thread id is supplied, thread-owned ledger, transcript, manifest, and snapshot refs are remapped under `threads/TARGET/`; endpoint and prefill records remain shared state records.
 
 ## Verify
 
@@ -313,6 +326,8 @@ examples/model-plane/gateway-*.example.json
 ```
 
 These job packets carry intent and policy inputs. They do not replace the gateway API; they call it.
+
+For `gateway_import_bundle`, `params.thread_id` is the target local thread id for the imported bundle.
 
 If the gateway requires auth, keep the token outside the packet and pass it to the standalone runner:
 

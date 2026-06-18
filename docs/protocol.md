@@ -75,6 +75,14 @@ threads/THREAD/snapshots/CAPSULE.bin
 
 State refs must not be absolute and must not include the `.capsules/` prefix. This keeps ledgers and manifests portable when a project state directory moves or is imported from a `.scap` bundle.
 
+When a bundle is imported under a new local thread id, only thread-owned refs are remapped:
+
+```text
+threads/SOURCE/... -> threads/TARGET/...
+```
+
+Endpoint records and prefill records remain state-global. Hard local manifests also refresh `storage.runtime_snapshot_ref` to the receiving state directory when a `storage.snapshot_ref` is present.
+
 ### Snapshot References
 
 For v0 local hard capsules, `storage.snapshot_ref` is relative to the capsule state directory:

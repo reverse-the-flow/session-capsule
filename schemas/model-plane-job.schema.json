@@ -50,7 +50,8 @@
       "additionalProperties": true,
       "properties": {
         "thread_id": {
-          "type": "string"
+          "type": "string",
+          "description": "Thread id for thread jobs. For gateway_import_bundle, this is the target local thread id to import as."
         },
         "capsule_id": {
           "type": ["string", "null"]

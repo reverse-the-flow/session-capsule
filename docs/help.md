@@ -235,6 +235,8 @@ Authenticated requests may use either:
 - `Authorization: Bearer TOKEN`
 - `X-Capsule-Gateway-Key: TOKEN`
 
+Raw upload imports may use `X-Capsule-Import-Thread` to import the bundle as a new local thread id.
+
 ## Security
 
 Exported `.scap` bundles include per-entry SHA-256 digests in `manifest.json`.
@@ -258,7 +260,7 @@ Preview export size without writing:
 py -3 .\scripts\capsule_cli.py export --thread research-loop --out .\research-loop.scap --dry-run
 ```
 
-Import verifies bundles that include `file_digests`, rejects duplicate or digest-mismatched entries, and warns when an incoming endpoint record differs from an existing local endpoint with the same id.
+Import verifies bundles that include `file_digests`, rejects duplicate or digest-mismatched entries, and warns when an incoming endpoint record differs from an existing local endpoint with the same id. Use `import --thread-id NEW_ID` to import a bundle as a new local thread.
 
 Current boundary:
 

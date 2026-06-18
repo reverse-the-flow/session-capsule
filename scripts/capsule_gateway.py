@@ -62,6 +62,7 @@ CORS_ALLOW_HEADERS = ", ".join(
         "X-Capsule-Prefill",
         "X-Capsule-Bundle-Id",
         "X-Capsule-Import-Force",
+        "X-Capsule-Import-Thread",
         "X-OpenWebUI-Chat-Id",
         "X-OpenWebUI-User-Id",
         "X-Opencode-Thread",
@@ -355,6 +356,7 @@ def transport_contract(config: GatewayConfig) -> JSONDict:
             "raw_upload_import": True,
             "stored_bundle_import": True,
             "delete": True,
+            "thread_id_override": True,
             "digest_verification": True,
             "hmac_sha256_signing": signing_enabled,
             "require_signature_on_import": config.require_bundle_signature,
@@ -450,11 +452,12 @@ def export_bundle_api(config: GatewayConfig, payload: JSONDict) -> JSONDict:
     return metadata
 
 
-def import_bundle_file(config: GatewayConfig, path: Path, force: bool = False) -> JSONDict:
+def import_bundle_file(config: GatewayConfig, path: Path, force: bool = False, thread_id: str | None = None) -> JSONDict:
+    target_thread_id = cc.slugify(thread_id) if thread_id else None
     args = argparse.Namespace(
         state_dir=config.state_dir,
         bundle=path,
-        thread_id=None,
+        thread_id=target_thread_id,
         signature_key_file=config.signature_key_file,
         signature_key_env=config.signature_key_env,
         require_signature=config.require_bundle_signature,
@@ -464,10 +467,11 @@ def import_bundle_file(config: GatewayConfig, path: Path, force: bool = False) -
         cc.import_bundle(args)
     with zipfile.ZipFile(path, "r") as bundle:
         manifest = json.loads(bundle.read("manifest.json").decode("utf-8"))
-    thread_id = manifest["thread_id"]
-    ledger = cc.Store(config.state_dir).load_ledger(thread_id)
+    imported_thread_id = target_thread_id or manifest["thread_id"]
+    ledger = cc.Store(config.state_dir).load_ledger(imported_thread_id)
     return {
-        "thread_id": thread_id,
+        "thread_id": imported_thread_id,
+        "source_thread_id": manifest["thread_id"],
         "active_capsule_id": ledger.get("active_capsule_id"),
         "bundle_id": path.stem,
         "fallback": ledger.get("fallback", {}),
@@ -482,7 +486,12 @@ def import_bundle_api(config: GatewayConfig, handler: BaseHTTPRequestHandler) ->
         path = bundle_path(config, bundle_id)
         if not path.exists():
             raise FileNotFoundError(f"Bundle not found: {bundle_id}")
-        return import_bundle_file(config, path, bool(payload.get("force", False)))
+        return import_bundle_file(
+            config,
+            path,
+            bool(payload.get("force", False)),
+            str(payload["thread_id"]) if payload.get("thread_id") else None,
+        )
 
     body = read_raw_body(handler, config.max_bundle_bytes)
     requested_id = handler.headers.get("X-Capsule-Bundle-Id")
@@ -492,7 +501,12 @@ def import_bundle_api(config: GatewayConfig, handler: BaseHTTPRequestHandler) ->
         raise FileExistsError(f"Bundle already exists: {bundle_id}")
     path.write_bytes(body)
     try:
-        return import_bundle_file(config, path, handler.headers.get("X-Capsule-Import-Force", "").lower() in {"1", "true", "yes"})
+        return import_bundle_file(
+            config,
+            path,
+            handler.headers.get("X-Capsule-Import-Force", "").lower() in {"1", "true", "yes"},
+            handler.headers.get("X-Capsule-Import-Thread"),
+        )
     except Exception:
         with contextlib.suppress(FileNotFoundError):
             path.unlink()

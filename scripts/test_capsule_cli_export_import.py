@@ -51,6 +51,7 @@ def main() -> None:
         temp_path = Path(temp)
         source_state = temp_path / "source" / ".capsules"
         imported_state = temp_path / "imported" / ".capsules"
+        renamed_state = temp_path / "renamed" / ".capsules"
         conflict_state = temp_path / "conflict" / ".capsules"
         signed_import_state = temp_path / "signed-imported" / ".capsules"
         prefill_path = temp_path / "prefill.md"
@@ -129,6 +130,36 @@ def main() -> None:
         if ledger["active_capsule_id"] is None:
             raise AssertionError("imported ledger did not preserve active capsule")
         run_cli(imported_state, "inspect", "--thread", "export-thread")
+
+        run_cli(renamed_state, "import", str(bundle_path), "--thread-id", "imported-copy")
+        renamed_ledger_path = renamed_state / "threads" / "imported-copy" / "thread-ledger.json"
+        renamed_transcript_path = renamed_state / "threads" / "imported-copy" / "transcript.jsonl"
+        if not renamed_ledger_path.exists():
+            raise AssertionError("renamed import did not create remapped ledger")
+        if not renamed_transcript_path.exists():
+            raise AssertionError("renamed import did not create remapped transcript")
+        renamed_ledger = json.loads(renamed_ledger_path.read_text(encoding="utf-8"))
+        if renamed_ledger["thread_id"] != "imported-copy":
+            raise AssertionError("renamed import did not rewrite ledger thread_id")
+        if renamed_ledger["transcript_ref"] != "threads/imported-copy/transcript.jsonl":
+            raise AssertionError("renamed import did not rewrite ledger transcript_ref")
+        thread_manifest_refs = [
+            item["manifest_ref"]
+            for item in renamed_ledger["capsules"]
+            if str(item["manifest_ref"]).startswith("threads/")
+        ]
+        if not thread_manifest_refs or not all(ref.startswith("threads/imported-copy/") for ref in thread_manifest_refs):
+            raise AssertionError(f"renamed import did not rewrite thread manifest refs: {thread_manifest_refs}")
+        renamed_manifest = json.loads((renamed_state / thread_manifest_refs[-1]).read_text(encoding="utf-8"))
+        if renamed_manifest["thread_id"] != "imported-copy":
+            raise AssertionError("renamed import did not rewrite capsule manifest thread_id")
+        prefill_refs = [
+            item["manifest_ref"]
+            for item in renamed_ledger["capsules"]
+            if str(item["manifest_ref"]).startswith("prefills/")
+        ]
+        if prefill_refs != ["prefills/user_default/v001/manifest.json"]:
+            raise AssertionError("renamed import should keep prefill refs state-global")
 
         run_cli(
             conflict_state,

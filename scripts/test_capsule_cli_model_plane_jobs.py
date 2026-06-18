@@ -302,22 +302,23 @@ def main() -> None:
                     "gateway_url": gateway_url,
                     "bundle": str(downloaded_bundle),
                     "bundle_id": "uploaded-job-thread",
+                    "thread_id": "job-thread-copy",
                     "force": True,
                 },
             )
             gateway_import_upload = run_cli(state, "job", "run", str(gateway_import_upload_job), *gateway_auth_args)
-            if '"thread_id": "job-thread"' not in gateway_import_upload.stdout:
-                raise AssertionError("gateway raw upload import job did not restore expected thread")
+            if '"thread_id": "job-thread-copy"' not in gateway_import_upload.stdout:
+                raise AssertionError("gateway raw upload import job did not use target thread override")
 
             gateway_import_stored_job = jobs / "gateway-import-stored.json"
             write_job(
                 gateway_import_stored_job,
                 "gateway_import_bundle",
-                {"gateway_url": gateway_url, "bundle_id": "uploaded-job-thread", "force": True},
+                {"gateway_url": gateway_url, "bundle_id": "uploaded-job-thread", "thread_id": "job-thread-stored", "force": True},
             )
             gateway_import_stored = run_cli(state, "job", "run", str(gateway_import_stored_job), *gateway_auth_args)
-            if '"bundle_id": "uploaded-job-thread"' not in gateway_import_stored.stdout:
-                raise AssertionError("gateway stored import job did not use expected bundle")
+            if '"thread_id": "job-thread-stored"' not in gateway_import_stored.stdout:
+                raise AssertionError("gateway stored import job did not use target thread override")
 
             gateway_delete_job = jobs / "gateway-delete.json"
             write_job(
