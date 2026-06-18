@@ -273,7 +273,15 @@ Browser preflight:
   py -3 .\\scripts\\capsule_gateway.py --state-dir .\\.capsules --endpoint local-llamacpp --cors-allow-origin http://127.0.0.1:3000
 
 Raw upload import target thread header:
-  X-Capsule-Import-Thread""",
+  X-Capsule-Import-Thread
+
+Direct gateway client commands:
+  py -3 .\\scripts\\capsule_cli.py gateway status --url http://127.0.0.1:8765 --json
+  py -3 .\\scripts\\capsule_cli.py gateway export --url http://127.0.0.1:8765 --thread research-loop --bundle-id research-loop
+  py -3 .\\scripts\\capsule_cli.py gateway list --url http://127.0.0.1:8765
+  py -3 .\\scripts\\capsule_cli.py gateway download --url http://127.0.0.1:8765 --bundle-id research-loop --out .\\research-loop.scap
+  py -3 .\\scripts\\capsule_cli.py gateway upload --url http://127.0.0.1:8765 --bundle .\\research-loop.scap --bundle-id uploaded-research-loop --thread-id research-loop-copy
+  py -3 .\\scripts\\capsule_cli.py gateway delete --url http://127.0.0.1:8765 --bundle-id uploaded-research-loop""",
     "storage": """Hard snapshots can be large. They are managed cache artifacts unless pinned.
 
 Defaults:
@@ -375,6 +383,11 @@ Signed export job packets:
 
 Protected gateway transport jobs:
   py -3 .\\scripts\\capsule_cli.py job run .\\examples\\model-plane\\gateway-download-bundle.example.json --gateway-auth-token-file .\\capsule-gateway-token
+
+Direct gateway transport commands:
+  py -3 .\\scripts\\capsule_cli.py gateway status --url http://127.0.0.1:8765 --auth-token-file .\\capsule-gateway-token --json
+  py -3 .\\scripts\\capsule_cli.py gateway download --url http://127.0.0.1:8765 --bundle-id research-loop --out .\\research-loop.scap --auth-token-file .\\capsule-gateway-token
+  py -3 .\\scripts\\capsule_cli.py gateway upload --url http://127.0.0.1:8765 --bundle .\\research-loop.scap --bundle-id uploaded-research-loop --thread-id research-loop-copy --auth-token-file .\\capsule-gateway-token
 
 Gateway launch profile:
   schemas/model-plane-gateway-launch.schema.json
@@ -3005,6 +3018,20 @@ def gateway_job_auth_headers(args: argparse.Namespace) -> dict[str, str]:
     return {"Authorization": f"Bearer {token}"}
 
 
+def gateway_cli_auth_headers(args: argparse.Namespace) -> dict[str, str]:
+    token = read_gateway_job_auth_token(
+        getattr(args, "auth_token_file", None),
+        getattr(args, "auth_token_env", None),
+    )
+    if token is None:
+        return {}
+    return {"Authorization": f"Bearer {token}"}
+
+
+def gateway_cli_params(args: argparse.Namespace) -> JSONDict:
+    return {"gateway_url": args.url, "timeout": args.timeout}
+
+
 def gateway_request_json(
     method: str,
     url: str,
@@ -3031,23 +3058,221 @@ def gateway_request_json(
     return data
 
 
-def gateway_download_bundle(params: JSONDict, job_file: Path, auth_headers: dict[str, str]) -> int:
-    bundle_id = str(require_job_param(params, "bundle_id"))
-    out = job_path(job_file.parent, str(require_job_param(params, "out")))
+def gateway_download_bundle_file(
+    gateway_url: str,
+    bundle_id: str,
+    out: Path,
+    timeout: float,
+    auth_headers: dict[str, str],
+) -> JSONDict:
     out.parent.mkdir(parents=True, exist_ok=True)
-    url = f"{gateway_base_url(params)}/api/capsules/bundles/{quote(bundle_id)}"
+    url = f"{gateway_base_url({'gateway_url': gateway_url})}/api/capsules/bundles/{quote(bundle_id)}"
     req = request.Request(url, headers=auth_headers, method="GET")
     try:
-        with request.urlopen(req, timeout=gateway_timeout(params)) as response:
+        with request.urlopen(req, timeout=timeout) as response:
             body = response.read()
+            response_headers = {key: value for key, value in response.headers.items()}
     except error.HTTPError as exc:
         raise RuntimeError(exc.read().decode("utf-8", errors="replace")) from exc
     out.write_bytes(body)
+    return {
+        "bundle_id": bundle_id,
+        "out": str(out),
+        "bytes": len(body),
+        "sha256": digest_file(out),
+        "content_type": response_headers.get("Content-Type"),
+        "response_bundle_id": response_headers.get("X-Capsule-Bundle-Id"),
+        "response_sha256": response_headers.get("X-Capsule-Bundle-SHA256"),
+    }
+
+
+def gateway_download_bundle(params: JSONDict, job_file: Path, auth_headers: dict[str, str]) -> int:
+    bundle_id = str(require_job_param(params, "bundle_id"))
+    out = job_path(job_file.parent, str(require_job_param(params, "out")))
+    result = gateway_download_bundle_file(
+        gateway_base_url(params),
+        bundle_id,
+        out,
+        gateway_timeout(params),
+        auth_headers,
+    )
     print(f"downloaded bundle: {out}")
     print(f"bundle_id: {bundle_id}")
-    print(f"bytes: {len(body)}")
-    print(f"sha256: {digest_file(out)}")
+    print(f"bytes: {result['bytes']}")
+    print(f"sha256: {result['sha256']}")
     return 0
+
+
+def gateway_status_command(args: argparse.Namespace) -> int:
+    params = gateway_cli_params(args)
+    data = gateway_request_json(
+        "GET",
+        f"{gateway_base_url(params)}/api/capsules/status",
+        None,
+        gateway_timeout(params),
+        gateway_cli_auth_headers(args),
+    )
+    if args.json:
+        print(json.dumps(data, indent=2))
+        return 0
+    transport = data.get("transport", {})
+    auth = transport.get("auth", {}) if isinstance(transport, dict) else {}
+    capabilities = transport.get("capabilities", {}) if isinstance(transport, dict) else {}
+    print(f"gateway: {gateway_base_url(params)}")
+    print(f"status: {data.get('status')}")
+    print(f"endpoint: {data.get('endpoint_id')}")
+    print(f"threads: {data.get('threads')}")
+    print(f"bundles: {data.get('bundles')}")
+    print(f"auth required: {'yes' if auth.get('required') else 'no'}")
+    print(f"download: {'yes' if capabilities.get('download') else 'no'}")
+    print(f"raw upload import: {'yes' if capabilities.get('raw_upload_import') else 'no'}")
+    print(f"max upload bytes: {transport.get('max_upload_bytes') if isinstance(transport, dict) else None}")
+    return 0
+
+
+def gateway_list_command(args: argparse.Namespace) -> int:
+    params = gateway_cli_params(args)
+    data = gateway_request_json(
+        "GET",
+        f"{gateway_base_url(params)}/api/capsules/bundles",
+        None,
+        gateway_timeout(params),
+        gateway_cli_auth_headers(args),
+    )
+    print(json.dumps(data, indent=2))
+    return 0
+
+
+def gateway_export_command(args: argparse.Namespace) -> int:
+    params = gateway_cli_params(args)
+    payload: JSONDict = {
+        "thread_id": args.thread,
+        "include_snapshots": bool(args.include_snapshots),
+        "redact_transcript": bool(args.redact_transcript),
+        "force": bool(args.force),
+    }
+    if args.bundle_id:
+        payload["bundle_id"] = args.bundle_id
+    data = gateway_request_json(
+        "POST",
+        f"{gateway_base_url(params)}/api/capsules/export",
+        payload,
+        gateway_timeout(params),
+        gateway_cli_auth_headers(args),
+    )
+    print(json.dumps(data, indent=2))
+    return 0
+
+
+def gateway_download_command(args: argparse.Namespace) -> int:
+    params = gateway_cli_params(args)
+    result = gateway_download_bundle_file(
+        gateway_base_url(params),
+        args.bundle_id,
+        args.out.resolve(),
+        gateway_timeout(params),
+        gateway_cli_auth_headers(args),
+    )
+    if args.json:
+        print(json.dumps(result, indent=2))
+        return 0
+    print(f"downloaded bundle: {result['out']}")
+    print(f"bundle_id: {result['bundle_id']}")
+    print(f"bytes: {result['bytes']}")
+    print(f"sha256: {result['sha256']}")
+    return 0
+
+
+def gateway_upload_command(args: argparse.Namespace) -> int:
+    params = gateway_cli_params(args)
+    source = args.bundle.resolve()
+    if not source.exists():
+        raise FileNotFoundError(f"Bundle not found: {source}")
+    headers = gateway_cli_auth_headers(args)
+    headers["Content-Type"] = "application/vnd.session-capsule.scap"
+    if args.bundle_id:
+        headers["X-Capsule-Bundle-Id"] = args.bundle_id
+    if args.thread_id:
+        headers["X-Capsule-Import-Thread"] = args.thread_id
+    if args.force:
+        headers["X-Capsule-Import-Force"] = "true"
+    req = request.Request(
+        f"{gateway_base_url(params)}/api/capsules/import",
+        data=source.read_bytes(),
+        headers=headers,
+        method="POST",
+    )
+    try:
+        with request.urlopen(req, timeout=gateway_timeout(params)) as response:
+            data = json.loads(response.read().decode("utf-8"))
+    except error.HTTPError as exc:
+        raise RuntimeError(exc.read().decode("utf-8", errors="replace")) from exc
+    if not isinstance(data, dict):
+        raise RuntimeError("Gateway response was not a JSON object")
+    print(json.dumps(data, indent=2))
+    return 0
+
+
+def gateway_import_command(args: argparse.Namespace) -> int:
+    params = gateway_cli_params(args)
+    payload: JSONDict = {"bundle_id": args.bundle_id, "force": bool(args.force)}
+    if args.thread_id:
+        payload["thread_id"] = args.thread_id
+    data = gateway_request_json(
+        "POST",
+        f"{gateway_base_url(params)}/api/capsules/import",
+        payload,
+        gateway_timeout(params),
+        gateway_cli_auth_headers(args),
+    )
+    print(json.dumps(data, indent=2))
+    return 0
+
+
+def gateway_delete_command(args: argparse.Namespace) -> int:
+    params = gateway_cli_params(args)
+    data = gateway_request_json(
+        "DELETE",
+        f"{gateway_base_url(params)}/api/capsules/bundles/{quote(args.bundle_id)}",
+        None,
+        gateway_timeout(params),
+        gateway_cli_auth_headers(args),
+    )
+    print(json.dumps(data, indent=2))
+    return 0
+
+
+def add_gateway_client_args(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--url", default="http://127.0.0.1:8765", help="Gateway base URL. /v1 suffixes are accepted.")
+    parser.add_argument("--timeout", type=float, default=120.0)
+    parser.add_argument("--auth-token-file", type=Path, help="Local gateway request token file.")
+    parser.add_argument("--auth-token-env", help="Environment variable containing the gateway request token.")
+
+
+def add_gateway_bundle_id_arg(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--bundle-id", required=True, help="Gateway bundle id without the .scap suffix.")
+
+
+def add_gateway_thread_target_args(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--thread-id", help="Import under a new local thread id.")
+    parser.add_argument("--force", action="store_true", help="Allow replacing an existing local thread.")
+
+
+def add_gateway_json_flag(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--json", action="store_true", help="Print machine-readable JSON.")
+
+
+def add_gateway_export_flags(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--bundle-id", help="Stored bundle id. Defaults to a generated id.")
+    parser.add_argument("--include-snapshots", action="store_true", help="Include hard local snapshot blobs.")
+    parser.add_argument("--redact-transcript", action="store_true", help="Omit transcript and prefill source text.")
+    parser.add_argument("--force", action="store_true", help="Overwrite an existing stored bundle with the same id.")
+
+
+def add_gateway_upload_flags(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--bundle", type=Path, required=True, help="Local .scap file to upload and import.")
+    parser.add_argument("--bundle-id", help="Stored bundle id for the uploaded .scap.")
+    add_gateway_thread_target_args(parser)
 
 
 def gateway_import_bundle_job(params: JSONDict, job_file: Path, auth_headers: dict[str, str]) -> int:
@@ -3385,6 +3610,44 @@ def build_parser() -> argparse.ArgumentParser:
     gateway_check.add_argument("--json", action="store_true", help="Print a machine-readable status payload.")
     gateway_check.add_argument("--timeout", type=float, help="Override gateway status request timeout.")
     gateway_check.set_defaults(func=check_gateway_profile)
+
+    gateway_status = gateway_sub.add_parser("status", help="Read a running gateway's status and transport contract.")
+    add_gateway_client_args(gateway_status)
+    add_gateway_json_flag(gateway_status)
+    gateway_status.set_defaults(func=gateway_status_command)
+
+    gateway_list = gateway_sub.add_parser("list", help="List stored .scap bundles from a running gateway.")
+    add_gateway_client_args(gateway_list)
+    gateway_list.set_defaults(func=gateway_list_command)
+
+    gateway_export = gateway_sub.add_parser("export", help="Ask a running gateway to export a thread into a stored bundle.")
+    add_gateway_client_args(gateway_export)
+    gateway_export.add_argument("--thread", required=True, help="Thread id to export from gateway state.")
+    add_gateway_export_flags(gateway_export)
+    gateway_export.set_defaults(func=gateway_export_command)
+
+    gateway_download = gateway_sub.add_parser("download", help="Download a stored gateway .scap bundle.")
+    add_gateway_client_args(gateway_download)
+    add_gateway_bundle_id_arg(gateway_download)
+    gateway_download.add_argument("--out", type=Path, required=True)
+    add_gateway_json_flag(gateway_download)
+    gateway_download.set_defaults(func=gateway_download_command)
+
+    gateway_upload = gateway_sub.add_parser("upload", help="Upload raw .scap bytes to a gateway and import them.")
+    add_gateway_client_args(gateway_upload)
+    add_gateway_upload_flags(gateway_upload)
+    gateway_upload.set_defaults(func=gateway_upload_command)
+
+    gateway_import = gateway_sub.add_parser("import", help="Import a bundle already stored by the gateway.")
+    add_gateway_client_args(gateway_import)
+    add_gateway_bundle_id_arg(gateway_import)
+    add_gateway_thread_target_args(gateway_import)
+    gateway_import.set_defaults(func=gateway_import_command)
+
+    gateway_delete = gateway_sub.add_parser("delete", help="Delete a stored gateway .scap bundle without deleting imported state.")
+    add_gateway_client_args(gateway_delete)
+    add_gateway_bundle_id_arg(gateway_delete)
+    gateway_delete.set_defaults(func=gateway_delete_command)
 
     state_cmd = subcommands.add_parser("state")
     state_sub = state_cmd.add_subparsers(dest="state_command", required=True)

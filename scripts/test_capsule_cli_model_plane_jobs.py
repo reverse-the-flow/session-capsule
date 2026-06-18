@@ -71,9 +71,11 @@ def main() -> None:
         jobs.mkdir()
         bundle = temp_path / "job-thread.scap"
         downloaded_bundle = temp_path / "job-thread-gateway.scap"
+        direct_downloaded_bundle = temp_path / "job-thread-direct.scap"
         gateway_token = temp_path / "gateway-token.txt"
         gateway_token.write_text("job-gateway-token\n", encoding="utf-8")
         gateway_auth_args = ("--gateway-auth-token-file", str(gateway_token))
+        direct_gateway_auth_args = ("--auth-token-file", str(gateway_token))
         signature_key = temp_path / "job-signature.key"
         signature_key.write_text("job-signing-key\n", encoding="utf-8")
         job_signature_args = ("--signature-key-file", str(signature_key), "--signature-key-id", "job-test")
@@ -279,10 +281,42 @@ def main() -> None:
             unauthorized_list = run_cli_failure(state, "job", "run", str(gateway_list_job))
             if "unauthorized" not in unauthorized_list.stderr:
                 raise AssertionError("gateway list job without runner auth did not fail with unauthorized")
+            unauthorized_direct_list = run_cli_failure(state, "gateway", "list", "--url", gateway_url)
+            if "unauthorized" not in unauthorized_direct_list.stderr:
+                raise AssertionError("direct gateway list without auth did not fail with unauthorized")
 
             gateway_list = run_cli(state, "job", "run", str(gateway_list_job), *gateway_auth_args)
             if "job-thread-gateway" not in gateway_list.stdout:
                 raise AssertionError("gateway list job did not include exported bundle")
+            direct_status = run_cli(
+                state,
+                "gateway",
+                "status",
+                "--url",
+                gateway_url,
+                *direct_gateway_auth_args,
+                "--json",
+            )
+            direct_status_payload = json.loads(direct_status.stdout)
+            if direct_status_payload.get("transport", {}).get("capabilities", {}).get("download") is not True:
+                raise AssertionError("direct gateway status did not advertise download capability")
+            direct_list = run_cli(state, "gateway", "list", "--url", gateway_url, *direct_gateway_auth_args)
+            if "job-thread-gateway" not in direct_list.stdout:
+                raise AssertionError("direct gateway list did not include exported bundle")
+            direct_export = run_cli(
+                state,
+                "gateway",
+                "export",
+                "--url",
+                gateway_url,
+                "--thread",
+                "job-thread",
+                "--bundle-id",
+                "direct-export-job-thread",
+                *direct_gateway_auth_args,
+            )
+            if '"bundle_id": "direct-export-job-thread"' not in direct_export.stdout:
+                raise AssertionError("direct gateway export did not return expected bundle id")
 
             gateway_download_job = jobs / "gateway-download.json"
             write_job(
@@ -293,6 +327,78 @@ def main() -> None:
             run_cli(state, "job", "run", str(gateway_download_job), *gateway_auth_args)
             if not downloaded_bundle.exists() or not downloaded_bundle.read_bytes().startswith(b"PK"):
                 raise AssertionError("gateway download job did not write a .scap bundle")
+            direct_download = run_cli(
+                state,
+                "gateway",
+                "download",
+                "--url",
+                gateway_url,
+                "--bundle-id",
+                "job-thread-gateway",
+                "--out",
+                str(direct_downloaded_bundle),
+                *direct_gateway_auth_args,
+                "--json",
+            )
+            direct_download_payload = json.loads(direct_download.stdout)
+            if not direct_downloaded_bundle.exists() or direct_download_payload.get("bytes", 0) <= 0:
+                raise AssertionError("direct gateway download did not write a .scap bundle")
+            direct_upload = run_cli(
+                state,
+                "gateway",
+                "upload",
+                "--url",
+                gateway_url,
+                "--bundle",
+                str(direct_downloaded_bundle),
+                "--bundle-id",
+                "direct-uploaded-job-thread",
+                "--thread-id",
+                "job-thread-direct",
+                "--force",
+                *direct_gateway_auth_args,
+            )
+            if '"thread_id": "job-thread-direct"' not in direct_upload.stdout:
+                raise AssertionError("direct gateway upload did not use target thread override")
+            direct_import = run_cli(
+                state,
+                "gateway",
+                "import",
+                "--url",
+                gateway_url,
+                "--bundle-id",
+                "direct-uploaded-job-thread",
+                "--thread-id",
+                "job-thread-direct-stored",
+                "--force",
+                *direct_gateway_auth_args,
+            )
+            if '"thread_id": "job-thread-direct-stored"' not in direct_import.stdout:
+                raise AssertionError("direct gateway stored import did not use target thread override")
+            direct_delete = run_cli(
+                state,
+                "gateway",
+                "delete",
+                "--url",
+                gateway_url,
+                "--bundle-id",
+                "direct-uploaded-job-thread",
+                *direct_gateway_auth_args,
+            )
+            if '"deleted": true' not in direct_delete.stdout:
+                raise AssertionError("direct gateway delete did not delete uploaded bundle")
+            direct_export_delete = run_cli(
+                state,
+                "gateway",
+                "delete",
+                "--url",
+                gateway_url,
+                "--bundle-id",
+                "direct-export-job-thread",
+                *direct_gateway_auth_args,
+            )
+            if '"deleted": true' not in direct_export_delete.stdout:
+                raise AssertionError("direct gateway delete did not delete exported bundle")
 
             gateway_import_upload_job = jobs / "gateway-import-upload.json"
             write_job(

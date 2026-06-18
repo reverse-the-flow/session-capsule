@@ -292,6 +292,15 @@ py -3 .\scripts\capsule_cli.py --state-dir .\.capsules job run .\examples\model-
 py -3 .\scripts\capsule_cli.py --state-dir .\.capsules job run .\examples\model-plane\gateway-download-bundle.example.json --gateway-auth-token-file .\capsule-gateway-token
 ```
 
+Or call the running gateway directly from the standalone CLI:
+
+```powershell
+py -3 .\scripts\capsule_cli.py gateway status --url http://127.0.0.1:8765 --auth-token-file .\capsule-gateway-token --json
+py -3 .\scripts\capsule_cli.py gateway export --url http://127.0.0.1:8765 --thread research-loop --bundle-id research-loop --auth-token-file .\capsule-gateway-token
+py -3 .\scripts\capsule_cli.py gateway download --url http://127.0.0.1:8765 --bundle-id research-loop --out .\research-loop.scap --auth-token-file .\capsule-gateway-token
+py -3 .\scripts\capsule_cli.py gateway upload --url http://127.0.0.1:8765 --bundle .\research-loop.scap --bundle-id uploaded-research-loop --thread-id research-loop-copy --auth-token-file .\capsule-gateway-token
+```
+
 Benchmark runs are written to `data/runs/<timestamp>-<label>/` with:
 
 - `manifest.json` for provenance and configuration

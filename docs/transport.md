@@ -205,6 +205,22 @@ X-Capsule-Bundle-Id: BUNDLE
 X-Capsule-Bundle-SHA256: sha256:...
 ```
 
+## Direct CLI Client
+
+The standalone CLI can call the same gateway upload/download endpoints without a Model Plane job packet. This is the simplest manual integration path and a useful smoke test for launch profiles:
+
+```powershell
+py -3 .\scripts\capsule_cli.py gateway status --url http://127.0.0.1:8765 --auth-token-file .\capsule-gateway-token --json
+py -3 .\scripts\capsule_cli.py gateway list --url http://127.0.0.1:8765 --auth-token-file .\capsule-gateway-token
+py -3 .\scripts\capsule_cli.py gateway export --url http://127.0.0.1:8765 --thread research-loop --bundle-id research-loop --auth-token-file .\capsule-gateway-token
+py -3 .\scripts\capsule_cli.py gateway download --url http://127.0.0.1:8765 --bundle-id research-loop --out .\research-loop.scap --auth-token-file .\capsule-gateway-token
+py -3 .\scripts\capsule_cli.py gateway upload --url http://127.0.0.1:8765 --bundle .\research-loop.scap --bundle-id uploaded-research-loop --thread-id research-loop-copy --auth-token-file .\capsule-gateway-token
+py -3 .\scripts\capsule_cli.py gateway import --url http://127.0.0.1:8765 --bundle-id uploaded-research-loop --thread-id research-loop-copy-2 --auth-token-file .\capsule-gateway-token
+py -3 .\scripts\capsule_cli.py gateway delete --url http://127.0.0.1:8765 --bundle-id uploaded-research-loop --auth-token-file .\capsule-gateway-token
+```
+
+These commands are thin wrappers around the gateway API. They do not store auth tokens in `.capsules`, job packets, or bundle metadata.
+
 ## Import
 
 Import a bundle already stored under `.capsules/bundles/`:

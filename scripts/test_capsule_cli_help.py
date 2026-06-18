@@ -58,6 +58,8 @@ def main() -> None:
     transport = run_cli("help", "transport")
     if "/api/capsules/export" not in transport or "application/vnd.session-capsule.scap" not in transport:
         raise AssertionError("transport help did not include gateway bundle API")
+    if "gateway download" not in transport or "gateway upload" not in transport:
+        raise AssertionError("transport help did not include direct gateway upload/download commands")
 
     model_plane = run_cli("help", "model-plane")
     if "gateway_export_bundle" not in model_plane:
@@ -72,6 +74,8 @@ def main() -> None:
         raise AssertionError("model-plane help did not include gateway launch-profile command rendering")
     if "gateway check" not in model_plane:
         raise AssertionError("model-plane help did not include gateway launch-profile status checking")
+    if "gateway status" not in model_plane or "gateway upload" not in model_plane:
+        raise AssertionError("model-plane help did not include direct gateway transport commands")
 
     security = run_cli("help", "security")
     if (

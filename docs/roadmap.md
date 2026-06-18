@@ -462,6 +462,8 @@ Initial status:
 - Model Plane job packets can now invoke the gateway transport endpoints through `capsule_cli.py job run`.
 - `gateway_import_bundle` job packets can pass `params.thread_id` as the target local import thread id.
 - Protected gateway transport jobs authenticate through runner-side `--gateway-auth-token-file` or `--gateway-auth-token-env` flags.
+- Direct CLI gateway client commands now call the same transport API: `gateway status`, `gateway list`, `gateway export`, `gateway download`, `gateway upload`, `gateway import`, and `gateway delete`.
+- `scripts/test_capsule_cli_model_plane_jobs.py` validates protected direct CLI upload/download controls against the in-process gateway alongside Model Plane job packets.
 
 ## Stage 11: Bundle Integrity, Signing, And Sealing
 
