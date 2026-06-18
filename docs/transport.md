@@ -219,6 +219,8 @@ py -3 .\scripts\capsule_cli.py gateway import --url http://127.0.0.1:8765 --bund
 py -3 .\scripts\capsule_cli.py gateway delete --url http://127.0.0.1:8765 --bundle-id uploaded-research-loop --auth-token-file .\capsule-gateway-token
 ```
 
+Add `--policy-preset metadata-only` to `gateway upload` when local upload should fail before any plaintext `.scap` bytes are sent.
+
 These commands are thin wrappers around the gateway API. They do not store auth tokens in `.capsules`, job packets, or bundle metadata.
 
 ## Import
@@ -273,9 +275,12 @@ Inspect share/import posture before exposing a bundle:
 ```powershell
 py -3 .\scripts\capsule_cli.py inspect --bundle .\research-loop.scap
 py -3 .\scripts\capsule_cli.py inspect --bundle .\research-loop.scap --json
+py -3 .\scripts\capsule_cli.py bundle-policy .\research-loop.scap --preset metadata-only
 ```
 
 Inspection reports whether transcript or prefill source text is present in plaintext, whether hard snapshots are included, whether the bundle is redacted, signed, or encrypted, and whether trusted transport is required. Gateway bundle listings expose the same classification as `share_safety`.
+
+`bundle-policy` is the exit-code gate for launchers and scripts. Preset `metadata-only` rejects plaintext transcript/prefill source content and snapshots; `signed-metadata-only` also requires a signature; `sealed` requires a future encryption envelope.
 
 Verify a signed bundle with an explicit key:
 

@@ -133,6 +133,12 @@ def main() -> None:
         human_inspect = run_cli(source_state, "inspect", "--bundle", str(bundle_path))
         if "classification: contains_plaintext_content" not in human_inspect.stdout:
             raise AssertionError("human bundle inspect did not print share classification")
+        plaintext_policy_failure = run_cli_failure(source_state, "bundle-policy", str(bundle_path), "--preset", "metadata-only")
+        if "plaintext transcript or prefill source content is present" not in plaintext_policy_failure.stdout:
+            raise AssertionError("bundle policy did not reject plaintext content")
+        unsigned_policy_failure = run_cli_failure(source_state, "bundle-policy", str(bundle_path), "--require-signature")
+        if "bundle signature is absent" not in unsigned_policy_failure.stdout:
+            raise AssertionError("bundle policy did not reject unsigned bundle")
 
         run_cli(source_state, "export", "--thread", "export-thread", "--out", str(redacted_bundle_path), "--redact-transcript")
         with zipfile.ZipFile(redacted_bundle_path, "r") as bundle:
@@ -160,6 +166,10 @@ def main() -> None:
             raise AssertionError("bundle inspect did not detect redacted transcript omission")
         if redacted_inspect_payload.get("content", {}).get("prefill_sources_included") is not False:
             raise AssertionError("bundle inspect did not detect redacted prefill source omission")
+        redacted_policy = run_cli(source_state, "bundle-policy", str(redacted_bundle_path), "--preset", "metadata-only", "--json")
+        redacted_policy_payload = json.loads(redacted_policy.stdout)
+        if redacted_policy_payload.get("passed") is not True:
+            raise AssertionError("bundle policy did not accept redacted metadata-only bundle")
         redacted_import = run_cli(redacted_import_state, "import", str(redacted_bundle_path))
         if "warning: transcript was redacted in this bundle" not in redacted_import.stdout:
             raise AssertionError("redacted import did not warn about missing transcript")
@@ -291,6 +301,9 @@ def main() -> None:
             raise AssertionError("bundle inspect did not detect signed bundle")
         if signed_inspect_payload.get("integrity", {}).get("signature_key_id") != "test-key":
             raise AssertionError("bundle inspect did not report signature key id")
+        signed_policy = run_cli(source_state, "bundle-policy", str(signed_bundle_path), "--require-signature")
+        if "policy passed: yes" not in signed_policy.stdout:
+            raise AssertionError("bundle policy did not accept signed bundle with signature requirement")
         wrong_key_path = temp_path / "wrong-signature.key"
         wrong_key_path.write_text("wrong-key", encoding="utf-8")
         wrong_key_failure = run_cli_failure(

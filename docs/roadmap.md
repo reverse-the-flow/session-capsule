@@ -498,6 +498,8 @@ Initial status:
 - `verify --signature-key-file KEY --require-signature` verifies the bundle signature.
 - `import --signature-key-file KEY --require-signature` verifies a required signature before extraction.
 - `inspect --bundle BUNDLE.scap` reports plaintext content, redaction, snapshots, signing, encryption status, and trusted-transport policy.
+- `bundle-policy BUNDLE.scap --preset metadata-only|signed-metadata-only|sealed` turns inspection into an exit-code gate for scripts and launchers.
+- Direct `gateway upload` supports `--policy-preset` and policy requirement flags so local uploads can fail before sending bytes.
 - Gateway bundle listings expose `share_safety`, `trusted_transport_required`, `transcript_included`, `prefill_sources_included`, and signing/encryption metadata.
 - `capsule_gateway.py --signature-key-file KEY --require-bundle-signature` applies signing and required verification to gateway transport.
 - `import BUNDLE.scap` verifies bundles that include `file_digests` before extracting state files.
@@ -702,4 +704,4 @@ Initial status:
 
 - Which `llama.cpp` server builds expose the most stable slot API fields?
 - Which opencode hook should fill per-session capsule headers automatically instead of relying on launch-time environment variables?
-- Should `.scap` include raw snapshots by default, or require an explicit `--include-snapshots` flag?
+- Which cross-platform encryption backend should provide the future sealed `.scap` envelope without inventing local crypto?

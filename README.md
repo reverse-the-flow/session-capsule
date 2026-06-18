@@ -167,6 +167,7 @@ py -3 .\scripts\capsule_cli.py export --thread research-loop-small --out .\resea
 py -3 .\scripts\capsule_cli.py export --thread research-loop-small --out .\research-loop-small.scap
 py -3 .\scripts\capsule_cli.py verify .\research-loop-small.scap
 py -3 .\scripts\capsule_cli.py inspect --bundle .\research-loop-small.scap
+py -3 .\scripts\capsule_cli.py bundle-policy .\research-loop-small.scap --preset metadata-only
 py -3 .\scripts\capsule_cli.py import .\research-loop-small.scap
 py -3 .\scripts\capsule_cli.py import .\research-loop-small.scap --thread-id research-loop-copy
 ```
@@ -174,6 +175,8 @@ py -3 .\scripts\capsule_cli.py import .\research-loop-small.scap --thread-id res
 By default, `.scap` export is ledger-only: it includes endpoint metadata, thread ledger, transcript, capsule manifests, prefill sources, and per-entry file digests, but omits hard snapshot blobs. Add `--include-snapshots` only when intentionally moving same-runtime local snapshot files. Add `--redact-transcript` to create a metadata-only bundle that omits transcript and prefill source text; this is useful for inspection, but it is not encryption.
 
 `inspect --bundle` reports the bundle's share/import posture: plaintext transcript or prefill source content, snapshot inclusion, redaction, signing, encryption status, and whether trusted transport is required.
+
+`bundle-policy` turns that posture into an exit-code gate for scripts and launchers. `--preset metadata-only` rejects transcript/prefill plaintext and snapshots. `--preset signed-metadata-only` also requires a signature. `--preset sealed` currently fails unless a future encryption envelope is present.
 
 Import warns when the bundle endpoint id already exists locally with different runtime, model, tokenizer, context, slot, or URL metadata.
 

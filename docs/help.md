@@ -252,9 +252,12 @@ Inspect bundle share/import posture:
 ```powershell
 py -3 .\scripts\capsule_cli.py inspect --bundle .\research-loop.scap
 py -3 .\scripts\capsule_cli.py inspect --bundle .\research-loop.scap --json
+py -3 .\scripts\capsule_cli.py bundle-policy .\research-loop.scap --preset metadata-only
 ```
 
 Inspection reports plaintext transcript or prefill source content, hard snapshot inclusion, redaction status, signing, encryption status, and whether trusted transport is required.
+
+`bundle-policy` is the script-friendly gate. Preset `metadata-only` rejects plaintext content and snapshots, `signed-metadata-only` also requires a signature, and `sealed` currently fails unless a future encryption envelope is present.
 
 Sign and verify with an explicit local key file:
 
@@ -290,6 +293,7 @@ Current boundary:
 - gateway request auth is controlled by `--auth-token-file` or `--auth-token-env`
 - gateway transport jobs authenticate with `job run --gateway-auth-token-file` or `job run --gateway-auth-token-env`
 - bundle inspection classifies transported bundles for share/import policy before upload or import
+- bundle policy checks fail with a nonzero exit code when a bundle does not meet the requested share/import requirements
 - not implemented yet: encryption or sealed user-carried blobs
 
 Redaction is not encryption. It removes transcript and prefill source text, but metadata, digests, token ranges, endpoint ids, and included hard snapshots may still be sensitive.

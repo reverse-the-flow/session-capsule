@@ -144,9 +144,12 @@ Before enabling external share/import affordances, Model Plane should inspect th
 
 ```powershell
 py -3 .\scripts\capsule_cli.py inspect --bundle .\research-loop.scap --json
+py -3 .\scripts\capsule_cli.py bundle-policy .\research-loop.scap --preset metadata-only --json
 ```
 
 For gateway-stored bundles, `GET /api/capsules/bundles` exposes the same classification as `share_safety` plus `trusted_transport_required`, plaintext-content flags, snapshot inclusion, signing, and encryption metadata. `metadata_only_not_encrypted` means transcript and prefill source text were omitted, but the bundle is still not sealed. `contains_plaintext_content` and `contains_unencrypted_snapshots` should stay behind trusted transport unless a later encryption envelope is present.
+
+For direct CLI-driven uploads, pass `--policy-preset metadata-only`, `--policy-preset signed-metadata-only`, or `--policy-preset sealed` to `gateway upload` to fail locally before sending bytes. The `sealed` preset is intentionally forward-looking: it will fail until an encryption envelope exists.
 
 ## Fallback
 

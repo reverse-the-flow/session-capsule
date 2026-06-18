@@ -333,6 +333,9 @@ Inspect bundle share/import posture:
   py -3 .\\scripts\\capsule_cli.py inspect --bundle .\\research-loop.scap
   py -3 .\\scripts\\capsule_cli.py inspect --bundle .\\research-loop.scap --json
 
+Fail unless a bundle is metadata-only before sharing:
+  py -3 .\\scripts\\capsule_cli.py bundle-policy .\\research-loop.scap --preset metadata-only
+
 Sign with an explicit local key file:
   py -3 .\\scripts\\capsule_cli.py export --thread research-loop --out .\\research-loop.scap --signature-key-file .\\capsule-signing.key --signature-key-id local
 
@@ -353,6 +356,7 @@ For gateway upload/download transport:
 Commands:
   py -3 .\\scripts\\capsule_cli.py verify .\\research-loop.scap
   py -3 .\\scripts\\capsule_cli.py inspect --bundle .\\research-loop.scap --json
+  py -3 .\\scripts\\capsule_cli.py bundle-policy .\\research-loop.scap --preset signed-metadata-only
   py -3 .\\scripts\\capsule_cli.py verify .\\research-loop.scap --signature-key-file .\\capsule-signing.key --require-signature
 
 Key handling:
@@ -393,6 +397,9 @@ Direct gateway transport commands:
   py -3 .\\scripts\\capsule_cli.py gateway status --url http://127.0.0.1:8765 --auth-token-file .\\capsule-gateway-token --json
   py -3 .\\scripts\\capsule_cli.py gateway download --url http://127.0.0.1:8765 --bundle-id research-loop --out .\\research-loop.scap --auth-token-file .\\capsule-gateway-token
   py -3 .\\scripts\\capsule_cli.py gateway upload --url http://127.0.0.1:8765 --bundle .\\research-loop.scap --bundle-id uploaded-research-loop --thread-id research-loop-copy --auth-token-file .\\capsule-gateway-token
+
+Gate local uploads before sending bytes:
+  py -3 .\\scripts\\capsule_cli.py gateway upload --url http://127.0.0.1:8765 --bundle .\\research-loop-redacted.scap --policy-preset metadata-only --auth-token-file .\\capsule-gateway-token
 
 Gateway launch profile:
   schemas/model-plane-gateway-launch.schema.json
@@ -2233,6 +2240,137 @@ def print_bundle_report(report: JSONDict) -> None:
         print(f"recommendation: {recommendation}")
 
 
+BUNDLE_POLICY_PRESETS: dict[str, set[str]] = {
+    "report": set(),
+    "metadata-only": {"disallow_plaintext", "disallow_snapshots"},
+    "signed-metadata-only": {"disallow_plaintext", "disallow_snapshots", "require_signature"},
+    "sealed": {"require_encryption"},
+}
+
+
+def bundle_policy_requirements(
+    preset: str,
+    disallow_plaintext: bool = False,
+    disallow_snapshots: bool = False,
+    require_signature: bool = False,
+    require_encryption: bool = False,
+    require_digest_index: bool = False,
+) -> set[str]:
+    if preset not in BUNDLE_POLICY_PRESETS:
+        allowed = ", ".join(sorted(BUNDLE_POLICY_PRESETS))
+        raise RuntimeError(f"Unsupported bundle policy preset: {preset}. Allowed: {allowed}")
+    requirements = set(BUNDLE_POLICY_PRESETS[preset])
+    if disallow_plaintext:
+        requirements.add("disallow_plaintext")
+    if disallow_snapshots:
+        requirements.add("disallow_snapshots")
+    if require_signature:
+        requirements.add("require_signature")
+    if require_encryption:
+        requirements.add("require_encryption")
+    if require_digest_index:
+        requirements.add("require_digest_index")
+    return requirements
+
+
+def evaluate_bundle_policy(
+    report: JSONDict,
+    preset: str,
+    disallow_plaintext: bool = False,
+    disallow_snapshots: bool = False,
+    require_signature: bool = False,
+    require_encryption: bool = False,
+    require_digest_index: bool = False,
+) -> JSONDict:
+    requirements = bundle_policy_requirements(
+        preset,
+        disallow_plaintext,
+        disallow_snapshots,
+        require_signature,
+        require_encryption,
+        require_digest_index,
+    )
+    content = report["content"]
+    integrity = report["integrity"]
+    entries = report["entries"]
+    failures: list[str] = []
+    if entries.get("duplicate_entries"):
+        failures.append("duplicate bundle entries are present")
+    if "disallow_plaintext" in requirements and (
+        content.get("transcript_included") or content.get("prefill_sources_included")
+    ):
+        failures.append("plaintext transcript or prefill source content is present")
+    if "disallow_snapshots" in requirements and content.get("snapshots_included"):
+        failures.append("hard snapshot blobs are included")
+    if "require_signature" in requirements and not integrity.get("signature_present"):
+        failures.append("bundle signature is absent")
+    if "require_encryption" in requirements and not integrity.get("encrypted"):
+        failures.append("bundle encryption is absent")
+    if "require_digest_index" in requirements and not integrity.get("file_digest_index_present"):
+        failures.append("file digest index is absent")
+    return {
+        "bundle": report["bundle"],
+        "thread_id": report.get("thread_id"),
+        "preset": preset,
+        "requirements": sorted(requirements),
+        "classification": report["share_policy"]["classification"],
+        "passed": not failures,
+        "failures": failures,
+        "share_policy": report["share_policy"],
+        "content": content,
+        "integrity": integrity,
+    }
+
+
+def print_bundle_policy_result(result: JSONDict) -> None:
+    print(f"bundle: {result['bundle']}")
+    print(f"thread: {result.get('thread_id')}")
+    print(f"policy preset: {result['preset']}")
+    print(f"classification: {result['classification']}")
+    requirements = result.get("requirements", [])
+    print(f"requirements: {', '.join(requirements) if requirements else 'report-only'}")
+    print(f"policy passed: {'yes' if result['passed'] else 'no'}")
+    for failure in result.get("failures", []):
+        print(f"failure: {failure}")
+    for warning in result.get("share_policy", {}).get("warnings", []):
+        print(f"warning: {warning}")
+
+
+def bundle_policy_command(args: argparse.Namespace) -> int:
+    report = inspect_bundle_report(args.bundle.resolve())
+    result = evaluate_bundle_policy(
+        report,
+        args.preset,
+        args.disallow_plaintext,
+        args.disallow_snapshots,
+        args.require_signature,
+        args.require_encryption,
+        args.require_digest_index,
+    )
+    if args.json:
+        print(json.dumps(result, indent=2))
+    else:
+        print_bundle_policy_result(result)
+    return 0 if result["passed"] else 1
+
+
+def enforce_bundle_policy_from_args(bundle_path: Path, args: argparse.Namespace) -> None:
+    preset = getattr(args, "policy_preset", "report")
+    result = evaluate_bundle_policy(
+        inspect_bundle_report(bundle_path),
+        preset,
+        bool(getattr(args, "disallow_plaintext", False)),
+        bool(getattr(args, "disallow_snapshots", False)),
+        bool(getattr(args, "require_signature", False)),
+        bool(getattr(args, "require_encryption", False)),
+        bool(getattr(args, "require_digest_index", False)),
+    )
+    if result["passed"]:
+        return
+    joined = "; ".join(result["failures"])
+    raise RuntimeError(f"Bundle policy failed ({preset}): {joined}")
+
+
 def bundle_json(bundle: zipfile.ZipFile, name: str) -> JSONDict:
     data = json.loads(bundle.read(name).decode("utf-8"))
     if not isinstance(data, dict):
@@ -3367,6 +3505,7 @@ def gateway_upload_command(args: argparse.Namespace) -> int:
     source = args.bundle.resolve()
     if not source.exists():
         raise FileNotFoundError(f"Bundle not found: {source}")
+    enforce_bundle_policy_from_args(source, args)
     headers = gateway_cli_auth_headers(args)
     headers["Content-Type"] = "application/vnd.session-capsule.scap"
     if args.bundle_id:
@@ -3452,6 +3591,28 @@ def add_gateway_upload_flags(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--bundle", type=Path, required=True, help="Local .scap file to upload and import.")
     parser.add_argument("--bundle-id", help="Stored bundle id for the uploaded .scap.")
     add_gateway_thread_target_args(parser)
+    add_bundle_policy_flags(parser, include_json=False, preset_flag="--policy-preset")
+
+
+def add_bundle_policy_flags(
+    parser: argparse.ArgumentParser,
+    include_json: bool,
+    preset_flag: str = "--preset",
+) -> None:
+    parser.add_argument(
+        preset_flag,
+        dest="preset" if preset_flag == "--preset" else "policy_preset",
+        choices=sorted(BUNDLE_POLICY_PRESETS),
+        default="report",
+        help="Bundle policy preset to enforce.",
+    )
+    parser.add_argument("--disallow-plaintext", action="store_true", help="Fail if transcript or prefill source text is present.")
+    parser.add_argument("--disallow-snapshots", action="store_true", help="Fail if hard snapshot blobs are present.")
+    parser.add_argument("--require-signature", action="store_true", help="Fail unless the bundle has a signature envelope.")
+    parser.add_argument("--require-encryption", action="store_true", help="Fail unless the bundle reports encryption.")
+    parser.add_argument("--require-digest-index", action="store_true", help="Fail unless the bundle has a file_digests index.")
+    if include_json:
+        parser.add_argument("--json", action="store_true", help="Print machine-readable JSON.")
 
 
 def gateway_import_bundle_job(params: JSONDict, job_file: Path, auth_headers: dict[str, str]) -> int:
@@ -3772,6 +3933,11 @@ def build_parser() -> argparse.ArgumentParser:
     verify_cmd.add_argument("--signature-key-env")
     verify_cmd.add_argument("--require-signature", action="store_true")
     verify_cmd.set_defaults(func=verify_bundle)
+
+    policy_cmd = subcommands.add_parser("bundle-policy", help="Check a .scap bundle against share/import policy requirements.")
+    policy_cmd.add_argument("bundle", type=Path)
+    add_bundle_policy_flags(policy_cmd, include_json=True)
+    policy_cmd.set_defaults(func=bundle_policy_command)
 
     job = subcommands.add_parser("job")
     job_sub = job.add_subparsers(dest="job_command", required=True)

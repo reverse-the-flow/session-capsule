@@ -83,6 +83,7 @@ def main() -> None:
         or "keys are not written into .capsules state" not in security
         or "import warns on local endpoint metadata conflicts" not in security
         or "inspect --bundle" not in security
+        or "bundle-policy" not in security
     ):
         raise AssertionError("security help did not explain integrity boundary")
 

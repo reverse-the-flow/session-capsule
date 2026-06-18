@@ -343,6 +343,22 @@ def main() -> None:
             direct_download_payload = json.loads(direct_download.stdout)
             if not direct_downloaded_bundle.exists() or direct_download_payload.get("bytes", 0) <= 0:
                 raise AssertionError("direct gateway download did not write a .scap bundle")
+            direct_policy_upload_failure = run_cli_failure(
+                state,
+                "gateway",
+                "upload",
+                "--url",
+                gateway_url,
+                "--bundle",
+                str(direct_downloaded_bundle),
+                "--bundle-id",
+                "rejected-plaintext-job-thread",
+                "--policy-preset",
+                "metadata-only",
+                *direct_gateway_auth_args,
+            )
+            if "Bundle policy failed" not in direct_policy_upload_failure.stderr:
+                raise AssertionError("direct gateway upload did not enforce local bundle policy")
             direct_upload = run_cli(
                 state,
                 "gateway",

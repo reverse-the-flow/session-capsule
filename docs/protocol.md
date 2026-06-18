@@ -112,6 +112,8 @@ Redacted exports are metadata-only bundles. They omit transcript and prefill sou
 
 `inspect --bundle BUNDLE.scap` derives a share/import classification from the bundle manifest and zip entries. Current classifications are `contains_plaintext_content`, `contains_unencrypted_snapshots`, `metadata_only_not_encrypted`, and future `encrypted`. Gateway bundle listings expose the same value as `share_safety` so launchers and UIs can gate upload/download affordances without parsing the archive format themselves.
 
+`bundle-policy BUNDLE.scap --preset PRESET` turns that inspection into an exit-code gate. `metadata-only` rejects plaintext transcript/prefill content and snapshots, `signed-metadata-only` also requires a signature envelope, and `sealed` requires an encryption envelope.
+
 ## Reload Order
 
 Thread reload should happen in this order:
