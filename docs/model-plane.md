@@ -88,6 +88,12 @@ The launch profile describes:
 
 The profile must contain only secret references, not secret values. For example, it may point at `.capsule-gateway-token` or `CAPSULE_GATEWAY_TOKEN`, but it must not contain the token itself.
 
+Render the gateway command from a profile:
+
+```powershell
+py -3 .\scripts\capsule_cli.py gateway command .\examples\model-plane\gateway-launch-profile.example.json --json
+```
+
 After Model Plane launches the gateway, it should call the profile's `transport.status_url` and require the status response to include a `transport` object before enabling bundle upload/download controls.
 
 For UI-driven `.scap` transfer, Model Plane should call the gateway bundle endpoints instead of reimplementing the archive format:

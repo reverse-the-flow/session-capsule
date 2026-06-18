@@ -58,6 +58,8 @@ def main() -> None:
         raise AssertionError("model-plane help did not include protected gateway job auth flags")
     if "--signature-key-file" not in model_plane:
         raise AssertionError("model-plane help did not include export job signing flags")
+    if "gateway command" not in model_plane:
+        raise AssertionError("model-plane help did not include gateway launch-profile command rendering")
 
     security = run_cli("help", "security")
     if (

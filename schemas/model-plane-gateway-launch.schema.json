@@ -129,6 +129,24 @@
           "type": "object",
           "additionalProperties": false,
           "required": ["source", "ref", "require_on_import"],
+          "allOf": [
+            {
+              "if": {
+                "properties": {
+                  "source": {
+                    "const": "none"
+                  }
+                }
+              },
+              "then": {
+                "properties": {
+                  "require_on_import": {
+                    "const": false
+                  }
+                }
+              }
+            }
+          ],
           "properties": {
             "source": {
               "type": "string",

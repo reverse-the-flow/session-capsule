@@ -245,6 +245,12 @@ Gateway launch profile artifacts:
 
 The launch profile stores gateway wiring and secret references only. It does not store gateway tokens or signing key values.
 
+Render a gateway launch command:
+
+```powershell
+py -3 .\scripts\capsule_cli.py gateway command .\examples\model-plane\gateway-launch-profile.example.json --json
+```
+
 Supported job packet types:
 
 - `resume_thread`

@@ -403,6 +403,8 @@ def validate_gateway_launch_profile(path: Path) -> None:
     if "require_on_import" not in bundle_signing:
         raise ValidationError(f"{name}.security.bundle_signing is missing require_on_import")
     require_bool(f"{name}.security.bundle_signing.require_on_import", bundle_signing["require_on_import"])
+    if bundle_signing["source"] == "none" and bundle_signing["require_on_import"]:
+        raise ValidationError(f"{name}.security.bundle_signing cannot require signed imports without a key source")
 
 
 def main() -> None:

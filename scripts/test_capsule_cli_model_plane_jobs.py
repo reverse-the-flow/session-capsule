@@ -78,6 +78,27 @@ def main() -> None:
         signature_key.write_text("job-signing-key\n", encoding="utf-8")
         job_signature_args = ("--signature-key-file", str(signature_key), "--signature-key-id", "job-test")
 
+        launch_profile = ROOT / "examples" / "model-plane" / "gateway-launch-profile.example.json"
+        launch_command = run_cli(state, "gateway", "command", str(launch_profile), "--json")
+        launch_payload = json.loads(launch_command.stdout)
+        command_args = launch_payload["command"]
+        if "--auth-token-file" not in command_args or ".capsule-gateway-token" not in command_args:
+            raise AssertionError("gateway launch profile did not render request auth reference")
+        if "--signature-key-file" not in command_args or ".capsule-signing.key" not in command_args:
+            raise AssertionError("gateway launch profile did not render signing key reference")
+        if "--require-bundle-signature" not in command_args:
+            raise AssertionError("gateway launch profile did not render required signature flag")
+        if launch_payload["status_url"] != "http://127.0.0.1:8765/api/capsules/status":
+            raise AssertionError("gateway launch profile did not expose expected status URL")
+
+        bad_profile = jobs / "bad-gateway-launch-profile.json"
+        bad_data = json.loads(launch_profile.read_text(encoding="utf-8"))
+        bad_data["security"]["request_auth"]["value"] = "do-not-store-me"
+        bad_profile.write_text(json.dumps(bad_data, indent=2) + "\n", encoding="utf-8")
+        bad_profile_failure = run_cli_failure(state, "gateway", "command", str(bad_profile))
+        if "secret references only" not in bad_profile_failure.stderr:
+            raise AssertionError("gateway launch profile secret-value guard did not reject inline secret")
+
         run_cli(
             state,
             "endpoint",

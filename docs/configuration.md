@@ -164,6 +164,12 @@ The profile maps to the gateway launch flags above:
 
 The profile stores secret references only. It may say `source=file` and `ref=.capsule-gateway-token`; it must not store the token or signing key value.
 
+Render the profile into gateway launch arguments:
+
+```powershell
+py -3 .\scripts\capsule_cli.py gateway command .\examples\model-plane\gateway-launch-profile.example.json --json
+```
+
 After launch, Model Plane should read `transport.status_url` and require the response's versioned `transport` object before enabling `.scap` upload/download controls.
 
 ## Endpoint Records

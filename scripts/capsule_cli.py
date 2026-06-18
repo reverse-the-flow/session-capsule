@@ -15,6 +15,7 @@ import json
 import os
 import re
 import shutil
+import subprocess
 import sys
 import zipfile
 from dataclasses import dataclass
@@ -338,6 +339,9 @@ Protected gateway transport jobs:
 Gateway launch profile:
   schemas/model-plane-gateway-launch.schema.json
   examples/model-plane/gateway-launch-profile.example.json
+
+Render a launch command:
+  py -3 .\\scripts\\capsule_cli.py gateway command .\\examples\\model-plane\\gateway-launch-profile.example.json --json
 
 Gateway health endpoint for launch profiles:
   /api/capsules/status
@@ -2500,6 +2504,131 @@ def validate_job_packet(packet: JSONDict) -> None:
         raise RuntimeError(f"Job packet params must not contain secret input keys: {joined}. Use job runner flags.")
 
 
+def reject_secret_values(name: str, value: Any) -> None:
+    secret_value_keys = {"value", "token_value", "key_value", "secret", "secret_value"}
+    if isinstance(value, dict):
+        for key, item in value.items():
+            if key in secret_value_keys:
+                raise RuntimeError(f"{name} must contain secret references only, not secret values: {key}")
+            reject_secret_values(f"{name}.{key}", item)
+    elif isinstance(value, list):
+        for index, item in enumerate(value):
+            reject_secret_values(f"{name}[{index}]", item)
+
+
+def require_profile_section(profile: JSONDict, key: str) -> JSONDict:
+    section = profile.get(key)
+    if not isinstance(section, dict):
+        raise RuntimeError(f"Gateway launch profile section must be an object: {key}")
+    return section
+
+
+def secret_ref_args(name: str, secret_ref: JSONDict, file_flag: str, env_flag: str) -> list[str]:
+    source = secret_ref.get("source")
+    ref = secret_ref.get("ref")
+    if source == "none":
+        if ref is not None:
+            raise RuntimeError(f"{name}.ref must be null when source is none")
+        return []
+    if source == "file":
+        if not isinstance(ref, str) or not ref:
+            raise RuntimeError(f"{name}.ref must be a non-empty file path")
+        return [file_flag, ref]
+    if source == "env":
+        if not isinstance(ref, str) or not ref:
+            raise RuntimeError(f"{name}.ref must be a non-empty environment variable name")
+        return [env_flag, ref]
+    raise RuntimeError(f"{name}.source must be none, file, or env")
+
+
+def gateway_launch_args(profile: JSONDict) -> list[str]:
+    if profile.get("schema_version") != "0.1":
+        raise RuntimeError("Gateway launch profile schema_version must be 0.1")
+    if profile.get("profile_type") != "session_capsule_gateway":
+        raise RuntimeError("Gateway launch profile profile_type must be session_capsule_gateway")
+    reject_secret_values("gateway launch profile", profile)
+
+    command = profile.get("command")
+    if isinstance(command, dict):
+        program = str(command.get("program") or "").strip()
+        prefix = [program] if program else []
+        raw_args = command.get("args", [])
+        if not isinstance(raw_args, list) or not all(isinstance(item, str) for item in raw_args):
+            raise RuntimeError("Gateway launch profile command.args must be a string array")
+        prefix.extend(raw_args)
+    else:
+        prefix = [sys.executable, str(Path(__file__).with_name("capsule_gateway.py"))]
+
+    gateway = require_profile_section(profile, "gateway")
+    launch = [
+        *prefix,
+        "--state-dir",
+        str(gateway["state_dir"]),
+        "--endpoint",
+        str(gateway["endpoint_id"]),
+        "--host",
+        str(gateway["host"]),
+        "--port",
+        str(int(gateway["port"])),
+        "--checkpoint-mode",
+        str(gateway["checkpoint_mode"]),
+        "--slot",
+        str(int(gateway["slot"])),
+        "--timeout",
+        str(gateway["timeout_seconds"]),
+        "--max-bundle-bytes",
+        str(gateway["max_bundle_bytes"]),
+    ]
+    if gateway.get("default_prefill"):
+        launch.extend(["--default-prefill", str(gateway["default_prefill"])])
+    if gateway.get("default_thread_prefix"):
+        launch.extend(["--default-thread-prefix", str(gateway["default_thread_prefix"])])
+
+    security = require_profile_section(profile, "security")
+    request_auth = security.get("request_auth")
+    if not isinstance(request_auth, dict):
+        raise RuntimeError("Gateway launch profile security.request_auth must be an object")
+    launch.extend(secret_ref_args("security.request_auth", request_auth, "--auth-token-file", "--auth-token-env"))
+
+    bundle_signing = security.get("bundle_signing")
+    if not isinstance(bundle_signing, dict):
+        raise RuntimeError("Gateway launch profile security.bundle_signing must be an object")
+    if bundle_signing.get("source") == "none" and bundle_signing.get("require_on_import"):
+        raise RuntimeError("Gateway launch profile cannot require signed imports without a bundle signing key source")
+    launch.extend(secret_ref_args("security.bundle_signing", bundle_signing, "--signature-key-file", "--signature-key-env"))
+    if bundle_signing.get("key_id"):
+        launch.extend(["--signature-key-id", str(bundle_signing["key_id"])])
+    if bundle_signing.get("require_on_import"):
+        launch.append("--require-bundle-signature")
+    return launch
+
+
+def render_gateway_command(args: argparse.Namespace) -> int:
+    profile_path = args.profile.resolve()
+    profile = read_json(profile_path)
+    launch = gateway_launch_args(profile)
+    transport = require_profile_section(profile, "transport")
+    output = {
+        "profile_id": profile.get("profile_id"),
+        "profile": str(profile_path),
+        "command": launch,
+        "command_line": subprocess.list2cmdline(launch),
+        "openai_base_url": transport.get("openai_base_url"),
+        "status_url": transport.get("status_url"),
+        "require_status_transport": bool(transport.get("require_status_transport", False)),
+    }
+    if args.json:
+        print(json.dumps(output, indent=2) + "\n", end="")
+        return 0
+    print(f"profile: {output['profile_id']}")
+    print(f"openai_base_url: {output['openai_base_url']}")
+    print(f"status_url: {output['status_url']}")
+    print(f"require_status_transport: {str(output['require_status_transport']).lower()}")
+    print("command:")
+    print(output["command_line"])
+    return 0
+
+
 def print_job_plan(packet: JSONDict) -> None:
     print(f"job: {packet['job_id']}")
     print(f"type: {packet['job_type']}")
@@ -2917,6 +3046,14 @@ def build_parser() -> argparse.ArgumentParser:
     job_run.add_argument("--gateway-auth-token-file", type=Path)
     job_run.add_argument("--gateway-auth-token-env")
     job_run.set_defaults(func=run_job_packet)
+
+    gateway_cmd = subcommands.add_parser("gateway")
+    gateway_sub = gateway_cmd.add_subparsers(dest="gateway_command", required=True)
+
+    gateway_command = gateway_sub.add_parser("command", help="Render a gateway launch command from a Model Plane profile.")
+    gateway_command.add_argument("profile", type=Path)
+    gateway_command.add_argument("--json", action="store_true", help="Print a machine-readable command payload.")
+    gateway_command.set_defaults(func=render_gateway_command)
 
     config_cmd = subcommands.add_parser("config")
     config_sub = config_cmd.add_subparsers(dest="config_command", required=True)
