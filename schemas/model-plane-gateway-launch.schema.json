@@ -166,6 +166,35 @@
               "type": "boolean"
             }
           }
+        },
+        "bundle_import_policy": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "preset",
+            "disallow_plaintext",
+            "disallow_snapshots",
+            "require_encryption",
+            "require_digest_index"
+          ],
+          "properties": {
+            "preset": {
+              "type": "string",
+              "enum": ["report", "metadata-only", "signed-metadata-only", "sealed"]
+            },
+            "disallow_plaintext": {
+              "type": "boolean"
+            },
+            "disallow_snapshots": {
+              "type": "boolean"
+            },
+            "require_encryption": {
+              "type": "boolean"
+            },
+            "require_digest_index": {
+              "type": "boolean"
+            }
+          }
         }
       }
     },

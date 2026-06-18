@@ -85,6 +85,7 @@ The launch profile describes:
 - OpenAI-compatible base URL and status URL
 - optional browser origin allowed to call gateway upload/download endpoints
 - request-auth and bundle-signing secret references
+- bundle import policy for server-side upload/import rejection
 - whether import requires signed bundles
 
 The profile must contain only secret references, not secret values. For example, it may point at `.capsule-gateway-token` or `CAPSULE_GATEWAY_TOKEN`, but it must not contain the token itself.
@@ -114,7 +115,7 @@ GET    /api/capsules/bundles/{bundle_id}
 POST   /api/capsules/import
 ```
 
-Model Plane should read `/api/capsules/status` first and use its `transport` object as the runtime contract. It advertises the API version, max raw upload bytes, `.scap` content type, endpoint paths, auth requirement, signing policy, and upload/download capabilities for the specific gateway instance that was launched.
+Model Plane should read `/api/capsules/status` first and use its `transport` object as the runtime contract. It advertises the API version, max raw upload bytes, `.scap` content type, endpoint paths, auth requirement, signing policy, import policy, and upload/download capabilities for the specific gateway instance that was launched.
 
 If Model Plane's upload/download controls run in a browser, the launch profile should set `gateway.cors_allow_origin` to that UI's exact origin. The status response then advertises `transport.cors`; Model Plane should require it before enabling direct browser `.scap` transfer controls.
 
@@ -150,6 +151,8 @@ py -3 .\scripts\capsule_cli.py bundle-policy .\research-loop.scap --preset metad
 For gateway-stored bundles, `GET /api/capsules/bundles` exposes the same classification as `share_safety` plus `trusted_transport_required`, plaintext-content flags, snapshot inclusion, signing, and encryption metadata. `metadata_only_not_encrypted` means transcript and prefill source text were omitted, but the bundle is still not sealed. `contains_plaintext_content` and `contains_unencrypted_snapshots` should stay behind trusted transport unless a later encryption envelope is present.
 
 For direct CLI-driven uploads, pass `--policy-preset metadata-only`, `--policy-preset signed-metadata-only`, or `--policy-preset sealed` to `gateway upload` to fail locally before sending bytes. The `sealed` preset is intentionally forward-looking: it will fail until an encryption envelope exists.
+
+For gateway-driven uploads, put the same intent in `security.bundle_import_policy`. `gateway command` renders it into `--bundle-policy-*` flags, and `gateway check` verifies the running gateway advertises the same `transport.import_policy`.
 
 ## Fallback
 

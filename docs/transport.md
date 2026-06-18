@@ -10,6 +10,14 @@ The gateway owns local bundle creation, local bundle storage, download, upload, 
 
 Gateway bundle signing is launch policy. If the gateway is started with `--signature-key-file` or `--signature-key-env`, exported bundles are signed. If it is also started with `--require-bundle-signature`, imports must verify with that key before extraction.
 
+Gateway bundle import policy is also launch policy. For example:
+
+```powershell
+py -3 .\scripts\capsule_gateway.py --state-dir .\.capsules --endpoint local-llamacpp --bundle-policy-preset metadata-only
+```
+
+The gateway applies this policy to raw uploads and stored-bundle imports before extraction. The active policy is advertised from `/api/capsules/status` as `transport.import_policy`.
+
 Gateway request auth is also launch policy. If the gateway is started with `--auth-token-file` or `--auth-token-env`, every request must include either:
 
 ```text
@@ -83,6 +91,10 @@ The response includes a versioned `transport` object:
       "exports_signed": true,
       "signature_key_id": "local",
       "required_on_import": false
+    },
+    "import_policy": {
+      "preset": "metadata-only",
+      "requirements": ["disallow_plaintext", "disallow_snapshots"]
     }
   }
 }

@@ -90,6 +90,10 @@ def main() -> None:
             raise AssertionError("gateway launch profile did not render signing key reference")
         if "--require-bundle-signature" not in command_args:
             raise AssertionError("gateway launch profile did not render required signature flag")
+        if "--bundle-policy-preset" not in command_args or "signed-metadata-only" not in command_args:
+            raise AssertionError("gateway launch profile did not render bundle import policy preset")
+        if "--bundle-policy-require-digest-index" not in command_args:
+            raise AssertionError("gateway launch profile did not render bundle import digest policy")
         if "--cors-allow-origin" not in command_args or "http://127.0.0.1:3000" not in command_args:
             raise AssertionError("gateway launch profile did not render CORS origin")
         if launch_payload["status_url"] != "http://127.0.0.1:8765/api/capsules/status":

@@ -259,6 +259,14 @@ Inspection reports plaintext transcript or prefill source content, hard snapshot
 
 `bundle-policy` is the script-friendly gate. Preset `metadata-only` rejects plaintext content and snapshots, `signed-metadata-only` also requires a signature, and `sealed` currently fails unless a future encryption envelope is present.
 
+Gateway-side import policy uses the same presets:
+
+```powershell
+py -3 .\scripts\capsule_gateway.py --state-dir .\.capsules --endpoint local-llamacpp --bundle-policy-preset metadata-only
+```
+
+This rejects raw uploads and stored-bundle imports before extraction.
+
 Sign and verify with an explicit local key file:
 
 ```powershell
@@ -294,6 +302,7 @@ Current boundary:
 - gateway transport jobs authenticate with `job run --gateway-auth-token-file` or `job run --gateway-auth-token-env`
 - bundle inspection classifies transported bundles for share/import policy before upload or import
 - bundle policy checks fail with a nonzero exit code when a bundle does not meet the requested share/import requirements
+- gateway import policy can enforce the same checks server-side before extraction
 - not implemented yet: encryption or sealed user-carried blobs
 
 Redaction is not encryption. It removes transcript and prefill source text, but metadata, digests, token ranges, endpoint ids, and included hard snapshots may still be sensitive.

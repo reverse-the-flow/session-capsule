@@ -114,6 +114,8 @@ Redacted exports are metadata-only bundles. They omit transcript and prefill sou
 
 `bundle-policy BUNDLE.scap --preset PRESET` turns that inspection into an exit-code gate. `metadata-only` rejects plaintext transcript/prefill content and snapshots, `signed-metadata-only` also requires a signature envelope, and `sealed` requires an encryption envelope.
 
+Gateways can enforce the same policy at import time with `--bundle-policy-preset` and related `--bundle-policy-*` flags. The policy is applied to raw uploads and stored-bundle imports before extraction, and is advertised as `transport.import_policy`.
+
 ## Reload Order
 
 Thread reload should happen in this order:

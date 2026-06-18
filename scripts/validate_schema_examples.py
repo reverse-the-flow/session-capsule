@@ -443,6 +443,23 @@ def validate_gateway_launch_profile(path: Path) -> None:
     require_bool(f"{name}.security.bundle_signing.require_on_import", bundle_signing["require_on_import"])
     if bundle_signing["source"] == "none" and bundle_signing["require_on_import"]:
         raise ValidationError(f"{name}.security.bundle_signing cannot require signed imports without a key source")
+    bundle_import_policy = security.get("bundle_import_policy")
+    if bundle_import_policy is not None:
+        if not isinstance(bundle_import_policy, dict):
+            raise ValidationError(f"{name}.security.bundle_import_policy must be an object")
+        require_keys(
+            f"{name}.security.bundle_import_policy",
+            bundle_import_policy,
+            ["preset", "disallow_plaintext", "disallow_snapshots", "require_encryption", "require_digest_index"],
+        )
+        if bundle_import_policy["preset"] not in {"report", "metadata-only", "signed-metadata-only", "sealed"}:
+            raise ValidationError(f"{name}.security.bundle_import_policy.preset is not supported")
+        for key in ["disallow_plaintext", "disallow_snapshots", "require_encryption", "require_digest_index"]:
+            require_bool(f"{name}.security.bundle_import_policy.{key}", bundle_import_policy[key])
+        if bundle_import_policy["preset"] == "signed-metadata-only" and not bundle_signing["require_on_import"]:
+            raise ValidationError(
+                f"{name}.security.bundle_import_policy signed-metadata-only requires bundle_signing.require_on_import"
+            )
 
 
 def main() -> None:

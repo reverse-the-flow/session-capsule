@@ -103,6 +103,11 @@ class GatewayConfig:
     auth_token: str | None
     lock: threading.Lock
     cors_allow_origin: str | None = None
+    bundle_policy_preset: str = "report"
+    bundle_policy_disallow_plaintext: bool = False
+    bundle_policy_disallow_snapshots: bool = False
+    bundle_policy_require_encryption: bool = False
+    bundle_policy_require_digest_index: bool = False
 
 
 def json_bytes(payload: Any) -> bytes:
@@ -364,6 +369,7 @@ def transport_contract(config: GatewayConfig) -> JSONDict:
             "digest_verification": True,
             "hmac_sha256_signing": signing_enabled,
             "require_signature_on_import": config.require_bundle_signature,
+            "bundle_policy_gate": True,
         },
         "endpoints": {
             "status": {"method": "GET", "path": "/api/capsules/status"},
@@ -396,6 +402,28 @@ def transport_contract(config: GatewayConfig) -> JSONDict:
             "signature_key_id": config.signature_key_id if signing_enabled else None,
             "required_on_import": config.require_bundle_signature,
         },
+        "import_policy": bundle_import_policy(config),
+    }
+
+
+def bundle_import_policy(config: GatewayConfig) -> JSONDict:
+    requirements = cc.bundle_policy_requirements(
+        config.bundle_policy_preset,
+        config.bundle_policy_disallow_plaintext,
+        config.bundle_policy_disallow_snapshots,
+        config.require_bundle_signature,
+        config.bundle_policy_require_encryption,
+        config.bundle_policy_require_digest_index,
+    )
+    return {
+        "preset": config.bundle_policy_preset,
+        "requirements": sorted(requirements),
+        "disallow_plaintext": config.bundle_policy_disallow_plaintext,
+        "disallow_snapshots": config.bundle_policy_disallow_snapshots,
+        "require_signature": "require_signature" in requirements,
+        "verify_signature": config.require_bundle_signature,
+        "require_encryption": config.bundle_policy_require_encryption,
+        "require_digest_index": config.bundle_policy_require_digest_index,
     }
 
 
@@ -457,6 +485,15 @@ def export_bundle_api(config: GatewayConfig, payload: JSONDict) -> JSONDict:
 
 
 def import_bundle_file(config: GatewayConfig, path: Path, force: bool = False, thread_id: str | None = None) -> JSONDict:
+    cc.enforce_bundle_policy(
+        path,
+        config.bundle_policy_preset,
+        config.bundle_policy_disallow_plaintext,
+        config.bundle_policy_disallow_snapshots,
+        config.require_bundle_signature,
+        config.bundle_policy_require_encryption,
+        config.bundle_policy_require_digest_index,
+    )
     target_thread_id = cc.slugify(thread_id) if thread_id else None
     args = argparse.Namespace(
         state_dir=config.state_dir,
@@ -838,6 +875,7 @@ def make_handler(config: GatewayConfig) -> type[BaseHTTPRequestHandler]:
                         "bundles": len(list_bundles(config)),
                         "bundle_signing": bool(config.signature_key_file or config.signature_key_env),
                         "require_bundle_signature": config.require_bundle_signature,
+                        "bundle_import_policy": bundle_import_policy(config),
                         "auth_required": config.auth_token is not None,
                         "transport": transport_contract(config),
                         "identity": identity_contract(config),
@@ -944,6 +982,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--signature-key-env", help="Optional environment variable containing the gateway bundle signing key.")
     parser.add_argument("--signature-key-id", help="Non-secret key label written into gateway-signed bundles.")
     parser.add_argument("--require-bundle-signature", action="store_true", help="Require uploaded or stored bundles to verify with the configured signature key before import.")
+    parser.add_argument("--bundle-policy-preset", choices=sorted(cc.BUNDLE_POLICY_PRESETS), default="report", help="Import policy preset enforced before extracting uploaded or stored bundles.")
+    parser.add_argument("--bundle-policy-disallow-plaintext", action="store_true", help="Reject imports that include transcript or prefill source text.")
+    parser.add_argument("--bundle-policy-disallow-snapshots", action="store_true", help="Reject imports that include hard snapshot blobs.")
+    parser.add_argument("--bundle-policy-require-encryption", action="store_true", help="Reject imports that do not report an encryption envelope.")
+    parser.add_argument("--bundle-policy-require-digest-index", action="store_true", help="Reject imports that do not include a file_digests index.")
     parser.add_argument("--auth-token-file", type=Path, help="Optional local token file required for every gateway request.")
     parser.add_argument("--auth-token-env", help="Optional environment variable containing the gateway auth token.")
     parser.add_argument("--cors-allow-origin", help="Optional browser origin allowed to call gateway APIs, or * for local development.")
@@ -978,6 +1021,11 @@ def main() -> int:
         ),
         lock=threading.Lock(),
         cors_allow_origin=args.cors_allow_origin,
+        bundle_policy_preset=args.bundle_policy_preset,
+        bundle_policy_disallow_plaintext=args.bundle_policy_disallow_plaintext,
+        bundle_policy_disallow_snapshots=args.bundle_policy_disallow_snapshots,
+        bundle_policy_require_encryption=args.bundle_policy_require_encryption,
+        bundle_policy_require_digest_index=args.bundle_policy_require_digest_index,
     )
     # Fail fast if endpoint is not configured.
     ensure_endpoint(config)

@@ -35,6 +35,13 @@
       "ref": ".capsule-signing.key",
       "key_id": "local",
       "require_on_import": true
+    },
+    "bundle_import_policy": {
+      "preset": "signed-metadata-only",
+      "disallow_plaintext": false,
+      "disallow_snapshots": false,
+      "require_encryption": false,
+      "require_digest_index": true
     }
   },
   "notes": [

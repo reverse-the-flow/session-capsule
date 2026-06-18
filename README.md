@@ -191,7 +191,10 @@ The gateway can apply the same policy to upload/download transport:
 
 ```powershell
 py -3 .\scripts\capsule_gateway.py --state-dir .\.capsules --endpoint local-llamacpp --signature-key-file .\capsule-signing.key --signature-key-id local --require-bundle-signature
+py -3 .\scripts\capsule_gateway.py --state-dir .\.capsules --endpoint local-llamacpp --bundle-policy-preset metadata-only
 ```
+
+Gateway import policy is server-side. It rejects raw uploads and stored-bundle imports before extraction when the bundle does not satisfy the selected policy.
 
 If the gateway is bound beyond local-only use, require a request token:
 

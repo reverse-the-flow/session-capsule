@@ -500,6 +500,8 @@ Initial status:
 - `inspect --bundle BUNDLE.scap` reports plaintext content, redaction, snapshots, signing, encryption status, and trusted-transport policy.
 - `bundle-policy BUNDLE.scap --preset metadata-only|signed-metadata-only|sealed` turns inspection into an exit-code gate for scripts and launchers.
 - Direct `gateway upload` supports `--policy-preset` and policy requirement flags so local uploads can fail before sending bytes.
+- `capsule_gateway.py --bundle-policy-preset PRESET` enforces the same policy for raw uploads and stored-bundle imports before extraction.
+- `/api/capsules/status` advertises `transport.import_policy` and the `bundle_policy_gate` capability.
 - Gateway bundle listings expose `share_safety`, `trusted_transport_required`, `transcript_included`, `prefill_sources_included`, and signing/encryption metadata.
 - `capsule_gateway.py --signature-key-file KEY --require-bundle-signature` applies signing and required verification to gateway transport.
 - `import BUNDLE.scap` verifies bundles that include `file_digests` before extracting state files.
@@ -561,6 +563,7 @@ Initial status:
 - `examples/model-plane/gateway-launch-profile.example.json` shows a local `llama.cpp` hard-checkpoint gateway profile.
 - `capsule_cli.py gateway command PROFILE --json` renders a launch profile into concrete `capsule_gateway.py` arguments plus the OpenAI base URL and status URL.
 - `capsule_cli.py gateway check PROFILE --json` calls the profile status URL, authenticates from the profile's request-auth reference, and verifies the live gateway status/transport contract.
+- `security.bundle_import_policy` maps to gateway-side `--bundle-policy-*` import rejection flags and is verified against `transport.import_policy`.
 - `gateway.cors_allow_origin` maps to `--cors-allow-origin` and is checked against `transport.cors` when present.
 - `scripts/validate_schema_examples.py` validates launch profiles separately from job packets.
 - `scripts/test_capsule_cli_model_plane_jobs.py` verifies launch-profile command rendering, authenticated status checking, and inline secret-value rejection.

@@ -177,6 +177,7 @@ The profile maps to the gateway launch flags above:
 | `gateway.cors_allow_origin` | `--cors-allow-origin` |
 | `security.request_auth` | `--auth-token-file` or `--auth-token-env` |
 | `security.bundle_signing` | `--signature-key-file`, `--signature-key-env`, `--signature-key-id`, and `--require-bundle-signature` |
+| `security.bundle_import_policy` | `--bundle-policy-preset` and related `--bundle-policy-*` flags |
 
 The profile stores secret references only. It may say `source=file` and `ref=.capsule-gateway-token`; it must not store the token or signing key value.
 
@@ -187,7 +188,7 @@ py -3 .\scripts\capsule_cli.py gateway command .\examples\model-plane\gateway-la
 py -3 .\scripts\capsule_cli.py gateway check .\examples\model-plane\gateway-launch-profile.example.json --json
 ```
 
-After launch, Model Plane should run the profile check. It reads `transport.status_url`, authenticates from `security.request_auth`, and requires the response's versioned `transport` object before enabling `.scap` upload/download controls. If Model Plane's UI is browser-hosted, set `gateway.cors_allow_origin` to the exact UI origin and require the status response's `transport.cors.enabled` to be true before enabling direct browser upload/download.
+After launch, Model Plane should run the profile check. It reads `transport.status_url`, authenticates from `security.request_auth`, and requires the response's versioned `transport` object before enabling `.scap` upload/download controls. The check also verifies `transport.import_policy` against `security.bundle_import_policy`. If Model Plane's UI is browser-hosted, set `gateway.cors_allow_origin` to the exact UI origin and require the status response's `transport.cors.enabled` to be true before enabling direct browser upload/download.
 
 For `gateway check`, relative file secret references are resolved from the profile directory.
 

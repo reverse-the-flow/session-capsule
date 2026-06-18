@@ -275,6 +275,9 @@ Browser preflight:
 Raw upload import target thread header:
   X-Capsule-Import-Thread
 
+Gateway-side import policy:
+  py -3 .\\scripts\\capsule_gateway.py --state-dir .\\.capsules --endpoint local-llamacpp --bundle-policy-preset metadata-only
+
 Direct gateway client commands:
   py -3 .\\scripts\\capsule_cli.py gateway status --url http://127.0.0.1:8765 --json
   py -3 .\\scripts\\capsule_cli.py gateway export --url http://127.0.0.1:8765 --thread research-loop --bundle-id research-loop
@@ -400,6 +403,9 @@ Direct gateway transport commands:
 
 Gate local uploads before sending bytes:
   py -3 .\\scripts\\capsule_cli.py gateway upload --url http://127.0.0.1:8765 --bundle .\\research-loop-redacted.scap --policy-preset metadata-only --auth-token-file .\\capsule-gateway-token
+
+Gateway-side import policy can also be set in the launch profile:
+  security.bundle_import_policy
 
 Gateway launch profile:
   schemas/model-plane-gateway-launch.schema.json
@@ -2354,21 +2360,40 @@ def bundle_policy_command(args: argparse.Namespace) -> int:
     return 0 if result["passed"] else 1
 
 
-def enforce_bundle_policy_from_args(bundle_path: Path, args: argparse.Namespace) -> None:
-    preset = getattr(args, "policy_preset", "report")
+def enforce_bundle_policy(
+    bundle_path: Path,
+    preset: str = "report",
+    disallow_plaintext: bool = False,
+    disallow_snapshots: bool = False,
+    require_signature: bool = False,
+    require_encryption: bool = False,
+    require_digest_index: bool = False,
+) -> JSONDict:
     result = evaluate_bundle_policy(
         inspect_bundle_report(bundle_path),
         preset,
+        disallow_plaintext,
+        disallow_snapshots,
+        require_signature,
+        require_encryption,
+        require_digest_index,
+    )
+    if not result["passed"]:
+        joined = "; ".join(result["failures"])
+        raise RuntimeError(f"Bundle policy failed ({preset}): {joined}")
+    return result
+
+
+def enforce_bundle_policy_from_args(bundle_path: Path, args: argparse.Namespace) -> None:
+    enforce_bundle_policy(
+        bundle_path,
+        getattr(args, "policy_preset", "report"),
         bool(getattr(args, "disallow_plaintext", False)),
         bool(getattr(args, "disallow_snapshots", False)),
         bool(getattr(args, "require_signature", False)),
         bool(getattr(args, "require_encryption", False)),
         bool(getattr(args, "require_digest_index", False)),
     )
-    if result["passed"]:
-        return
-    joined = "; ".join(result["failures"])
-    raise RuntimeError(f"Bundle policy failed ({preset}): {joined}")
 
 
 def bundle_json(bundle: zipfile.ZipFile, name: str) -> JSONDict:
@@ -3030,6 +3055,40 @@ def secret_ref_args(name: str, secret_ref: JSONDict, file_flag: str, env_flag: s
     raise RuntimeError(f"{name}.source must be none, file, or env")
 
 
+def profile_bundle_import_policy(security: JSONDict, bundle_signing: JSONDict) -> JSONDict:
+    policy = security.get("bundle_import_policy") or {}
+    if not isinstance(policy, dict):
+        raise RuntimeError("Gateway launch profile security.bundle_import_policy must be an object")
+    preset = str(policy.get("preset", "report"))
+    disallow_plaintext = bool(policy.get("disallow_plaintext", False))
+    disallow_snapshots = bool(policy.get("disallow_snapshots", False))
+    require_encryption = bool(policy.get("require_encryption", False))
+    require_digest_index = bool(policy.get("require_digest_index", False))
+    requirements = bundle_policy_requirements(
+        preset,
+        disallow_plaintext,
+        disallow_snapshots,
+        bool(bundle_signing.get("require_on_import", False)),
+        require_encryption,
+        require_digest_index,
+    )
+    if "require_signature" in requirements and not bundle_signing.get("require_on_import"):
+        raise RuntimeError(
+            "Gateway launch profile bundle import policy requires signatures; "
+            "set security.bundle_signing.require_on_import=true so the gateway verifies them"
+        )
+    return {
+        "preset": preset,
+        "requirements": sorted(requirements),
+        "disallow_plaintext": disallow_plaintext,
+        "disallow_snapshots": disallow_snapshots,
+        "require_signature": "require_signature" in requirements,
+        "verify_signature": bool(bundle_signing.get("require_on_import", False)),
+        "require_encryption": require_encryption,
+        "require_digest_index": require_digest_index,
+    }
+
+
 def gateway_launch_args(profile: JSONDict) -> list[str]:
     if profile.get("schema_version") != "0.1":
         raise RuntimeError("Gateway launch profile schema_version must be 0.1")
@@ -3091,6 +3150,16 @@ def gateway_launch_args(profile: JSONDict) -> list[str]:
         launch.extend(["--signature-key-id", str(bundle_signing["key_id"])])
     if bundle_signing.get("require_on_import"):
         launch.append("--require-bundle-signature")
+    import_policy = profile_bundle_import_policy(security, bundle_signing)
+    launch.extend(["--bundle-policy-preset", import_policy["preset"]])
+    if import_policy["disallow_plaintext"]:
+        launch.append("--bundle-policy-disallow-plaintext")
+    if import_policy["disallow_snapshots"]:
+        launch.append("--bundle-policy-disallow-snapshots")
+    if import_policy["require_encryption"]:
+        launch.append("--bundle-policy-require-encryption")
+    if import_policy["require_digest_index"]:
+        launch.append("--bundle-policy-require-digest-index")
     return launch
 
 
@@ -3175,6 +3244,7 @@ def verify_gateway_status_contract(profile: JSONDict, status: JSONDict) -> JSOND
     expected_signing = bundle_signing.get("source") != "none"
     expected_upload_bytes = parse_bytes(str(gateway["max_bundle_bytes"]))
     expected_cors_origin = gateway.get("cors_allow_origin")
+    expected_import_policy = profile_bundle_import_policy(security, bundle_signing)
 
     mismatches: list[str] = []
     checks = {
@@ -3205,8 +3275,31 @@ def verify_gateway_status_contract(profile: JSONDict, status: JSONDict) -> JSOND
         if expected_cors_origin:
             transport_checks["transport.cors.enabled"] = cors_status.get("enabled") is True
             transport_checks["transport.cors.allow_origin"] = cors_status.get("allow_origin") == expected_cors_origin
+        import_policy_status = transport_status.get("import_policy", {})
+        transport_checks["transport.import_policy.preset"] = import_policy_status.get("preset") == expected_import_policy["preset"]
+        transport_checks["transport.import_policy.requirements"] = (
+            import_policy_status.get("requirements") == expected_import_policy["requirements"]
+        )
+        for key in [
+            "disallow_plaintext",
+            "disallow_snapshots",
+            "require_signature",
+            "verify_signature",
+            "require_encryption",
+            "require_digest_index",
+        ]:
+            transport_checks[f"transport.import_policy.{key}"] = import_policy_status.get(key) == expected_import_policy[key]
         capabilities = transport_status.get("capabilities", {})
-        for capability in ["export", "list", "download", "raw_upload_import", "stored_bundle_import", "delete", "thread_id_override"]:
+        for capability in [
+            "export",
+            "list",
+            "download",
+            "raw_upload_import",
+            "stored_bundle_import",
+            "delete",
+            "thread_id_override",
+            "bundle_policy_gate",
+        ]:
             transport_checks[f"transport.capability.{capability}"] = capabilities.get(capability) is True
         for name, passed in transport_checks.items():
             if not passed:
@@ -3224,6 +3317,7 @@ def verify_gateway_status_contract(profile: JSONDict, status: JSONDict) -> JSOND
         "transport_verified": transport_verified,
         "threads": status.get("threads"),
         "bundles": status.get("bundles"),
+        "bundle_import_policy": transport_status.get("import_policy") if isinstance(transport_status, dict) else None,
     }
 
 

@@ -144,6 +144,20 @@ def post_bytes(url: str, payload: bytes, headers: dict[str, str]) -> tuple[dict[
         return body, {key: value for key, value in response.headers.items()}
 
 
+def post_bytes_failure(url: str, payload: bytes, headers: dict[str, str]) -> str:
+    req = request.Request(
+        url,
+        data=payload,
+        headers={"Content-Type": "application/vnd.session-capsule.scap", **headers},
+        method="POST",
+    )
+    try:
+        with request.urlopen(req, timeout=20) as response:
+            raise AssertionError(f"expected POST failure but got status {response.status}")
+    except error.HTTPError as exc:
+        return exc.read().decode("utf-8", errors="replace")
+
+
 def delete_json(url: str, headers: dict[str, str] | None = None) -> dict[str, Any]:
     req = request.Request(url, headers=headers or {}, method="DELETE")
     with request.urlopen(req, timeout=20) as response:
@@ -273,9 +287,14 @@ def main() -> None:
             if "X-Capsule-Bundle-Id" not in preflight.get("Access-Control-Allow-Headers", ""):
                 raise AssertionError("gateway CORS preflight did not allow bundle upload headers")
             capabilities = transport.get("capabilities", {})
-            for capability in ["export", "download", "raw_upload_import", "stored_bundle_import", "delete"]:
+            for capability in ["export", "download", "raw_upload_import", "stored_bundle_import", "delete", "bundle_policy_gate"]:
                 if capabilities.get(capability) is not True:
                     raise AssertionError(f"gateway transport status did not advertise {capability}")
+            import_policy = transport.get("import_policy", {})
+            if import_policy.get("preset") != "report":
+                raise AssertionError("gateway transport status did not expose default import policy")
+            if import_policy.get("verify_signature") is not False:
+                raise AssertionError("gateway transport status did not expose signature verification policy")
             endpoints = transport.get("endpoints", {})
             if endpoints.get("download_bundle", {}).get("path_template") != "/api/capsules/bundles/{bundle_id}":
                 raise AssertionError("gateway transport status did not expose download path template")
@@ -475,15 +494,27 @@ def main() -> None:
                 require_bundle_signature=True,
                 auth_token=gateway_token,
                 lock=threading.Lock(),
+                bundle_policy_preset="metadata-only",
             )
             import_gateway = capsule_gateway.create_server(import_config)
             import_gateway_thread = threading.Thread(target=import_gateway.serve_forever, daemon=True)
             import_gateway_thread.start()
             import_gateway_url = f"http://127.0.0.1:{import_gateway.server_port}"
             try:
-                imported, import_headers = post_bytes(
+                policy_failure = post_bytes_failure(
                     f"{import_gateway_url}/api/capsules/import",
                     bundle_bytes,
+                    {
+                        **auth_headers,
+                        "X-Capsule-Bundle-Id": "rejected-plaintext-gateway-thread",
+                        "X-Capsule-Import-Thread": "gateway-thread-rejected",
+                    },
+                )
+                if "Bundle policy failed" not in policy_failure:
+                    raise AssertionError("gateway import policy did not reject plaintext bundle")
+                imported, import_headers = post_bytes(
+                    f"{import_gateway_url}/api/capsules/import",
+                    redacted_bytes,
                     {
                         **auth_headers,
                         "X-Capsule-Bundle-Id": "uploaded-gateway-thread",
