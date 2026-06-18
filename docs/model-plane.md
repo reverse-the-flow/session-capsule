@@ -95,10 +95,11 @@ The launch profile describes:
 - gateway transport capabilities required before this profile's controls are enabled
 - optional browser origin allowed to call gateway upload/download endpoints
 - request-auth and bundle-signing secret references
+- public age recipient-file policy for sealed external transfers
 - bundle import policy for server-side upload/import rejection
 - whether import requires signed bundles
 
-The profile must contain only secret references, not secret values. For example, it may point at `.capsule-gateway-token` or `CAPSULE_GATEWAY_TOKEN`, but it must not contain the token itself.
+The profile must contain only secret references, not secret values. For example, it may point at `.capsule-gateway-token` or `CAPSULE_GATEWAY_TOKEN`, but it must not contain the token itself. `security.bundle_sealing.age_recipient_file` is public key material. Private age identity files are not profile fields.
 
 Render the gateway command from a profile:
 
@@ -117,6 +118,8 @@ That check calls the profile's `transport.status_url`, authenticates from `secur
 The same check reports `endpoint_verified` and `endpoint_compatibility`. If the profile requests `checkpoint_mode=hard`, the check requires the running gateway status to report `hard_checkpoint_ready=true`, which depends on a successful endpoint slot probe.
 
 For `gateway check`, relative file secret references are resolved from the profile directory. The profile still stores only references, not token or key values.
+
+If `security.bundle_sealing.require_for_external_transfer=true`, `gateway command --json` returns a `bundle_sealing` object with a `seal_command_template`. Model Plane can use that template before upload or after download when a user-carried transfer must be sealed. This does not add a gateway runtime flag because the gateway stores and imports `.scap` bundles; sealing and unsealing are explicit envelope steps around transfer.
 
 For UI-driven `.scap` transfer, Model Plane should call the gateway bundle endpoints instead of reimplementing the archive format:
 
@@ -189,6 +192,8 @@ For gateway-stored bundles, `GET /api/capsules/bundles` exposes the same classif
 For direct CLI-driven uploads, pass `--policy-preset metadata-only`, `--policy-preset signed-metadata-only`, or `--policy-preset sealed` to `gateway upload` to fail locally before sending bytes. The `sealed` preset requires an encrypted envelope such as one created by `capsule_cli.py seal`.
 
 For gateway-driven uploads, put the same intent in `security.bundle_import_policy`. `gateway command` renders it into `--bundle-policy-*` flags, and `gateway check` verifies the running gateway advertises the same `transport.import_policy`.
+
+Do not import sealed envelopes directly. Use store-only upload for a sealed transfer artifact, then unseal with an operator-private age identity before importing the recovered `.scap`.
 
 ## Fallback
 

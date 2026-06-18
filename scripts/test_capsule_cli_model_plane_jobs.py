@@ -100,6 +100,16 @@ def main() -> None:
             raise AssertionError("gateway launch profile did not expose expected status URL")
         if "download" not in launch_payload.get("required_capabilities", []):
             raise AssertionError("gateway launch profile did not expose required transfer capabilities")
+        bundle_sealing = launch_payload.get("bundle_sealing", {})
+        if bundle_sealing.get("enabled") is not True:
+            raise AssertionError("gateway launch profile did not expose bundle sealing policy")
+        if bundle_sealing.get("age_recipient_file") != ".capsules/security/recipients/local.agepub":
+            raise AssertionError("gateway launch profile did not expose public age recipient file")
+        if bundle_sealing.get("policy_preset") != "sealed":
+            raise AssertionError("gateway launch profile did not map external transfer policy to sealed preset")
+        seal_template = bundle_sealing.get("seal_command_template") or []
+        if "--age-recipient-file" not in seal_template or ".capsules/security/recipients/local.agepub" not in seal_template:
+            raise AssertionError("gateway launch profile did not expose a seal command template")
 
         bad_profile = jobs / "bad-gateway-launch-profile.json"
         bad_data = json.loads(launch_profile.read_text(encoding="utf-8"))
@@ -108,6 +118,13 @@ def main() -> None:
         bad_profile_failure = run_cli_failure(state, "gateway", "command", str(bad_profile))
         if "secret references only" not in bad_profile_failure.stderr:
             raise AssertionError("gateway launch profile secret-value guard did not reject inline secret")
+        bad_sealing_profile = jobs / "bad-gateway-launch-profile-sealing.json"
+        bad_sealing_data = json.loads(launch_profile.read_text(encoding="utf-8"))
+        bad_sealing_data["security"]["bundle_sealing"]["age_identity_file"] = "C:/Users/you/.config/age/keys.txt"
+        bad_sealing_profile.write_text(json.dumps(bad_sealing_data, indent=2) + "\n", encoding="utf-8")
+        bad_sealing_failure = run_cli_failure(state, "gateway", "command", str(bad_sealing_profile))
+        if "security.bundle_sealing has unsupported keys" not in bad_sealing_failure.stderr:
+            raise AssertionError("gateway launch profile did not reject private age identity field")
 
         run_cli(
             state,

@@ -142,6 +142,8 @@ def main() -> None:
         raise AssertionError("model-plane help did not include required capability status")
     if "gateway status" not in model_plane or "gateway store" not in model_plane or "gateway upload" not in model_plane:
         raise AssertionError("model-plane help did not include direct gateway transport commands")
+    if "security.bundle_sealing" not in model_plane or "bundle_sealing.seal_command_template" not in model_plane:
+        raise AssertionError("model-plane help did not include public sealing transfer policy")
 
     security = run_cli("help", "security")
     if (

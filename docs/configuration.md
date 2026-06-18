@@ -179,8 +179,9 @@ The profile maps to the gateway launch flags above:
 | `security.request_auth` | `--auth-token-file` or `--auth-token-env` |
 | `security.bundle_signing` | `--signature-key-file`, `--signature-key-env`, `--signature-key-id`, and `--require-bundle-signature` |
 | `security.bundle_import_policy` | `--bundle-policy-preset` and related `--bundle-policy-*` flags |
+| `security.bundle_sealing` | Public age recipient-file policy returned by `gateway command --json` for pre-upload or post-download sealing workflows |
 
-The profile stores secret references only. It may say `source=file` and `ref=.capsule-gateway-token`; it must not store the token or signing key value.
+The profile stores secret references only. It may say `source=file` and `ref=.capsule-gateway-token`; it must not store the token or signing key value. `security.bundle_sealing.age_recipient_file` is public key material, not a private age identity. Private age identity files stay outside `.capsules` and outside the launch profile.
 
 Render the profile into gateway launch arguments:
 
@@ -190,6 +191,8 @@ py -3 .\scripts\capsule_cli.py gateway check .\examples\model-plane\gateway-laun
 ```
 
 After launch, Model Plane should run the profile check. It reads `transport.status_url`, authenticates from `security.request_auth`, and requires the response's versioned `transport` object before enabling `.scap` upload/download controls. The check also verifies `transport.required_capabilities`, `transport.import_policy` against `security.bundle_import_policy`, and the upload cap from `gateway.max_bundle_bytes`. If Model Plane's UI is browser-hosted, set `gateway.cors_allow_origin` to the exact UI origin and require the status response's `transport.cors.enabled` to be true before enabling direct browser upload/download.
+
+`gateway command --json` also returns `bundle_sealing` when configured. That object includes a `seal_command_template` using `--age-recipient-file` so Model Plane can require sealed user-carried transfers without learning the `.scap` envelope internals. Sealing is a transfer policy, not a gateway runtime flag.
 
 For `gateway check`, relative file secret references are resolved from the profile directory.
 

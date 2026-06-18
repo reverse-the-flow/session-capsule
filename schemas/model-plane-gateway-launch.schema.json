@@ -217,6 +217,33 @@
               "type": "boolean"
             }
           }
+        },
+        "bundle_sealing": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "enabled",
+            "age_bin",
+            "age_recipient_file",
+            "require_for_external_transfer"
+          ],
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "age_bin": {
+              "type": "string",
+              "description": "External age-compatible command used by Model Plane or the operator before upload/download transfer."
+            },
+            "age_recipient_file": {
+              "type": ["string", "null"],
+              "description": "Public age recipient file reference. This is not private key material."
+            },
+            "require_for_external_transfer": {
+              "type": "boolean",
+              "description": "When true, Model Plane should require a sealed .scap envelope for user-carried or non-local transfer."
+            }
+          }
         }
       }
     },

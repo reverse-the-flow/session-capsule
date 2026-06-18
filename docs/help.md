@@ -363,7 +363,7 @@ Gateway launch profile artifacts:
 - `schemas/model-plane-gateway-launch.schema.json`
 - `examples/model-plane/gateway-launch-profile.example.json`
 
-The launch profile stores gateway wiring, required gateway transport capabilities, and secret references only. It does not store gateway tokens or signing key values.
+The launch profile stores gateway wiring, required gateway transport capabilities, public sealing policy, and secret references only. It does not store gateway tokens, signing key values, or private age identities.
 
 Render a gateway launch command:
 
@@ -373,6 +373,8 @@ py -3 .\scripts\capsule_cli.py gateway check .\examples\model-plane\gateway-laun
 ```
 
 For `gateway check`, relative file secret references are resolved from the profile directory.
+
+When `security.bundle_sealing` is configured, `gateway command --json` returns a `bundle_sealing.seal_command_template` that uses `--age-recipient-file`. This gives Model Plane a concrete way to seal external `.scap` transfers while keeping age identity files operator-private.
 
 `gateway check --json` reports:
 

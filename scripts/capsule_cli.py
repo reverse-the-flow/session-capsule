@@ -482,6 +482,9 @@ Gate local uploads before sending bytes:
 Gateway-side import policy can also be set in the launch profile:
   security.bundle_import_policy
 
+Public sealing policy for user-carried transfer can also be set in the launch profile:
+  security.bundle_sealing
+
 Gateway launch profile:
   schemas/model-plane-gateway-launch.schema.json
   examples/model-plane/gateway-launch-profile.example.json
@@ -495,7 +498,7 @@ Check a launched gateway:
 Gateway health endpoint for launch profiles:
   /api/capsules/status
 
-Gateway check reports transport_verified, endpoint_verified, endpoint_compatibility, required_capabilities, and transport_capabilities. Hard checkpoint profiles require a slot_probe_ok endpoint.
+Gateway command reports bundle_sealing.seal_command_template when the profile includes a public age recipient file. Gateway check reports transport_verified, endpoint_verified, endpoint_compatibility, required_capabilities, and transport_capabilities. Hard checkpoint profiles require a slot_probe_ok endpoint.
 
 Gateway import jobs may use params.thread_id as the target local thread id for the imported bundle.
 
@@ -3628,6 +3631,73 @@ def profile_bundle_import_policy(security: JSONDict, bundle_signing: JSONDict) -
     }
 
 
+def profile_bundle_sealing(security: JSONDict) -> JSONDict:
+    sealing = security.get("bundle_sealing") or {}
+    if not isinstance(sealing, dict):
+        raise RuntimeError("Gateway launch profile security.bundle_sealing must be an object")
+    if not sealing:
+        return {
+            "enabled": False,
+            "age_bin": None,
+            "age_recipient_file": None,
+            "require_for_external_transfer": False,
+            "policy_preset": None,
+            "seal_command_template": None,
+        }
+
+    allowed_keys = {"enabled", "age_bin", "age_recipient_file", "require_for_external_transfer"}
+    unknown = sorted(set(sealing) - allowed_keys)
+    if unknown:
+        raise RuntimeError("Gateway launch profile security.bundle_sealing has unsupported keys: " + ", ".join(unknown))
+    missing = sorted(allowed_keys - set(sealing))
+    if missing:
+        raise RuntimeError("Gateway launch profile security.bundle_sealing is missing required keys: " + ", ".join(missing))
+    enabled = sealing["enabled"]
+    require_for_external_transfer = sealing["require_for_external_transfer"]
+    if not isinstance(enabled, bool):
+        raise RuntimeError("Gateway launch profile security.bundle_sealing.enabled must be a boolean")
+    if not isinstance(require_for_external_transfer, bool):
+        raise RuntimeError("Gateway launch profile security.bundle_sealing.require_for_external_transfer must be a boolean")
+    age_bin = str(sealing.get("age_bin") or "age").strip()
+    age_recipient_file = sealing.get("age_recipient_file")
+    if require_for_external_transfer and not enabled:
+        raise RuntimeError("Gateway launch profile cannot require sealed external transfer when bundle_sealing.enabled=false")
+    if enabled:
+        if not age_bin:
+            raise RuntimeError("Gateway launch profile security.bundle_sealing.age_bin must be a non-empty string")
+        if not isinstance(age_recipient_file, str) or not age_recipient_file.strip():
+            raise RuntimeError(
+                "Gateway launch profile security.bundle_sealing.age_recipient_file must be a non-empty public file reference"
+            )
+        age_recipient_file = age_recipient_file.strip()
+    elif age_recipient_file is not None:
+        raise RuntimeError("Gateway launch profile security.bundle_sealing.age_recipient_file must be null when disabled")
+
+    seal_template = None
+    if enabled:
+        seal_template = [
+            "py",
+            "-3",
+            "scripts/capsule_cli.py",
+            "seal",
+            "{bundle}",
+            "--out",
+            "{sealed_bundle}",
+            "--age-bin",
+            age_bin,
+            "--age-recipient-file",
+            age_recipient_file,
+        ]
+    return {
+        "enabled": enabled,
+        "age_bin": age_bin if enabled else None,
+        "age_recipient_file": age_recipient_file,
+        "require_for_external_transfer": require_for_external_transfer,
+        "policy_preset": "sealed" if require_for_external_transfer else None,
+        "seal_command_template": seal_template,
+    }
+
+
 def gateway_launch_args(profile: JSONDict) -> list[str]:
     if profile.get("schema_version") != "0.1":
         raise RuntimeError("Gateway launch profile schema_version must be 0.1")
@@ -3707,6 +3777,7 @@ def render_gateway_command(args: argparse.Namespace) -> int:
     profile = read_json(profile_path)
     launch = gateway_launch_args(profile)
     transport = require_profile_section(profile, "transport")
+    security = require_profile_section(profile, "security")
     required_capabilities = profile_required_transport_capabilities(transport)
     output = {
         "profile_id": profile.get("profile_id"),
@@ -3717,6 +3788,7 @@ def render_gateway_command(args: argparse.Namespace) -> int:
         "status_url": transport.get("status_url"),
         "require_status_transport": bool(transport.get("require_status_transport", False)),
         "required_capabilities": required_capabilities,
+        "bundle_sealing": profile_bundle_sealing(security),
     }
     if args.json:
         print(json.dumps(output, indent=2) + "\n", end="")

@@ -24,6 +24,7 @@ Recommended v0 policy:
 - Job packets, gateway launch profiles, and `.scap` bundles must not contain identity key values.
 - Store secret references or operator-local paths, not secrets.
 - Keep signing keys and age identities separate. HMAC signing proves shared-key authenticity; age sealing provides confidentiality.
+- Model Plane launch profiles may include `security.bundle_sealing.age_recipient_file` for public recipient policy.
 
 A reasonable project-local public recipient path is:
 
@@ -36,6 +37,25 @@ A reasonable private identity path is outside capsule state:
 ```text
 C:\Users\you\.config\age\keys.txt
 ```
+
+## Model Plane Profile Policy
+
+The launch profile can advertise the public sealing policy for upload/download controls:
+
+```json
+{
+  "security": {
+    "bundle_sealing": {
+      "enabled": true,
+      "age_bin": "age",
+      "age_recipient_file": ".capsules/security/recipients/local.agepub",
+      "require_for_external_transfer": true
+    }
+  }
+}
+```
+
+`gateway command --json` turns that into `bundle_sealing.seal_command_template`. The template is for Model Plane or an operator before upload/download transfer. It is not a gateway runtime flag, and it never contains an age identity.
 
 ## Seal
 

@@ -528,6 +528,33 @@ def validate_gateway_launch_profile(path: Path) -> None:
             raise ValidationError(
                 f"{name}.security.bundle_import_policy signed-metadata-only requires bundle_signing.require_on_import"
             )
+    bundle_sealing = security.get("bundle_sealing")
+    if bundle_sealing is not None:
+        if not isinstance(bundle_sealing, dict):
+            raise ValidationError(f"{name}.security.bundle_sealing must be an object")
+        require_keys(
+            f"{name}.security.bundle_sealing",
+            bundle_sealing,
+            ["enabled", "age_bin", "age_recipient_file", "require_for_external_transfer"],
+        )
+        require_bool(f"{name}.security.bundle_sealing.enabled", bundle_sealing["enabled"])
+        require_bool(
+            f"{name}.security.bundle_sealing.require_for_external_transfer",
+            bundle_sealing["require_for_external_transfer"],
+        )
+        if not isinstance(bundle_sealing["age_bin"], str) or not bundle_sealing["age_bin"].strip():
+            raise ValidationError(f"{name}.security.bundle_sealing.age_bin must be a non-empty string")
+        if bundle_sealing["enabled"]:
+            if not isinstance(bundle_sealing["age_recipient_file"], str) or not bundle_sealing["age_recipient_file"].strip():
+                raise ValidationError(
+                    f"{name}.security.bundle_sealing.age_recipient_file must be a public recipient-file reference"
+                )
+        elif bundle_sealing["age_recipient_file"] is not None:
+            raise ValidationError(f"{name}.security.bundle_sealing.age_recipient_file must be null when disabled")
+        if bundle_sealing["require_for_external_transfer"] and not bundle_sealing["enabled"]:
+            raise ValidationError(
+                f"{name}.security.bundle_sealing cannot require sealed external transfer when disabled"
+            )
 
 
 def main() -> None:

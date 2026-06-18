@@ -23,7 +23,7 @@ It performs:
 - `.scap` import thread-id override and ref remapping smoke test
 - `.scap` redacted export/import smoke test for metadata-only transcript sharing
 - storage config, pinning, stats, and GC smoke test
-- Model Plane job-packet smoke test, including launch-profile rendering/checking, required transport capability gating, shutdown planning, signed export jobs, and authenticated gateway transport job packets
+- Model Plane job-packet smoke test, including launch-profile rendering/checking, bundle-sealing transfer metadata, required transport capability gating, shutdown planning, signed export jobs, and authenticated gateway transport job packets
 - local gateway fake-backend smoke test
 - gateway auth plus signed bundle export/list/download/store/upload/delete smoke path
 - gateway status discovery for transport API version, upload size, content type, auth policy, signing policy, endpoint paths, and bundle capabilities

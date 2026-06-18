@@ -54,11 +54,18 @@
       "disallow_snapshots": false,
       "require_encryption": false,
       "require_digest_index": true
+    },
+    "bundle_sealing": {
+      "enabled": true,
+      "age_bin": "age",
+      "age_recipient_file": ".capsules/security/recipients/local.agepub",
+      "require_for_external_transfer": true
     }
   },
   "notes": [
     "This is a Model Plane launch profile, not a job packet.",
     "The profile carries secret references only. It must not contain the gateway token or signing key value.",
+    "bundle_sealing carries public recipient-file policy only. It must not contain age identity key values.",
     "Set gateway.cors_allow_origin to the exact browser origin of the Model Plane UI, or null for non-browser/CLI-only use.",
     "transport.required_capabilities lists the gateway status capabilities Model Plane must see before enabling upload/download controls.",
     "After launch, Model Plane should read transport.status_url and require the response transport object before enabling upload/download controls."

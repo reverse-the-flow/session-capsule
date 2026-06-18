@@ -576,10 +576,12 @@ Initial status:
 - `gateway check` reports `endpoint_verified` and gates hard checkpoint profiles on `endpoint_compatibility.hard_checkpoint_ready`.
 - `transport.required_capabilities` lets a profile name the gateway capabilities that must be live before Model Plane enables profile-dependent controls.
 - `security.bundle_import_policy` maps to gateway-side `--bundle-policy-*` import rejection flags and is verified against `transport.import_policy`.
+- `security.bundle_sealing` lets a launch profile advertise public age recipient-file policy for sealed external transfers without carrying age identity values.
+- `capsule_cli.py gateway command PROFILE --json` returns `bundle_sealing.seal_command_template` so Model Plane can invoke `seal --age-recipient-file` before user-carried upload/download transfer.
 - `gateway.cors_allow_origin` maps to `--cors-allow-origin` and is checked against `transport.cors` when present.
 - `capsule_cli.py endpoint matrix --json` gives Model Plane a cache view of endpoint slot compatibility before it exposes hard capsule controls.
 - `scripts/validate_schema_examples.py` validates launch profiles separately from job packets.
-- `scripts/test_capsule_cli_model_plane_jobs.py` verifies launch-profile command rendering, authenticated status checking, soft-profile endpoint readiness, and inline secret-value rejection.
+- `scripts/test_capsule_cli_model_plane_jobs.py` verifies launch-profile command rendering, bundle-sealing transfer metadata, authenticated status checking, soft-profile endpoint readiness, and inline secret-value rejection.
 - `docs/model-plane.md` and `docs/configuration.md` explain how Model Plane maps the profile to gateway launch flags and status discovery.
 
 ## Stage 14: State Reference Policy
