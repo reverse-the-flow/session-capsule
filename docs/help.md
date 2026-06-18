@@ -10,6 +10,7 @@ thread     = canonical transcript plus capsule ledger
 capsule    = checkpoint manifest, optionally with a hard snapshot
 prefill    = reusable root context
 gateway    = local OpenAI-compatible request-path layer
+integration = thin client config for Open WebUI, opencode, and local UIs
 transport  = gateway API for .scap upload/download
 security   = bundle integrity now, signing/encryption later
 config     = persistent policy for capsule state
@@ -78,6 +79,7 @@ The CLI help topics are:
 - `thread`
 - `prefill`
 - `gateway`
+- `integrations`
 - `transport`
 - `storage`
 - `state`
@@ -138,6 +140,18 @@ Launch flags should describe the current process:
 - `--cors-allow-origin`
 
 These are good Model Plane launch-profile fields.
+
+## Integrations
+
+Generate an opencode provider config with stable capsule headers:
+
+```powershell
+py -3 .\scripts\capsule_cli.py integration opencode-config --workspace . --session default --prefill user_default --out .\.capsules\integrations\opencode.generated.json
+```
+
+The generated config writes `X-Capsule-Thread`, `X-Capsule-Workspace`, and `X-Capsule-Prefill` directly. The gateway token remains an environment reference, `{env:CAPSULE_GATEWAY_TOKEN}`, so secrets are not written into the config.
+
+Open WebUI should point at the gateway's OpenAI-compatible base URL and forward chat/user headers when available.
 
 ## Storage Safety
 

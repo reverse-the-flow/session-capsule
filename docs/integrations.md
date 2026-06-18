@@ -102,7 +102,21 @@ If gateway auth is enabled, set `OPENAI_API_KEY` to the gateway token.
 
 opencode can use an OpenAI-compatible custom provider.
 
-Use the example in:
+Generate a provider config with concrete workspace/thread/prefill headers:
+
+```powershell
+py -3 .\scripts\capsule_cli.py integration opencode-config --workspace . --session default --prefill user_default --out .\.capsules\integrations\opencode.generated.json
+```
+
+The generated config keeps the gateway token as an environment reference:
+
+```text
+{env:CAPSULE_GATEWAY_TOKEN}
+```
+
+Set `CAPSULE_GATEWAY_TOKEN` only when gateway auth is enabled. Do not write the token into the generated config.
+
+The static template remains in:
 
 ```text
 examples/integrations/opencode.capsule-provider.jsonc
@@ -137,7 +151,7 @@ The core provider shape is:
 }
 ```
 
-This is enough for CLI-first launches where the shell sets `CAPSULE_THREAD`, `CAPSULE_WORKSPACE`, and `CAPSULE_PREFILL`. A later native opencode hook should fill those values from the active project and session automatically.
+The generated config is the CLI-first path when no native opencode hook is available. It avoids relying on hand-set `CAPSULE_THREAD`, `CAPSULE_WORKSPACE`, and `CAPSULE_PREFILL` values by writing those headers directly into the provider config for the selected workspace and session.
 
 On Windows, a minimal launcher example is:
 

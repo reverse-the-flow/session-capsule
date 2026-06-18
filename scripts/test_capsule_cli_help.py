@@ -3,8 +3,10 @@
 
 from __future__ import annotations
 
+import json
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 
@@ -29,7 +31,18 @@ def run_cli(*args: str) -> str:
 
 def main() -> None:
     topics = run_cli("help", "--topics")
-    for expected in ["overview", "config", "gateway", "transport", "storage", "state", "security", "model-plane", "troubleshooting"]:
+    for expected in [
+        "overview",
+        "config",
+        "gateway",
+        "integrations",
+        "transport",
+        "storage",
+        "state",
+        "security",
+        "model-plane",
+        "troubleshooting",
+    ]:
         if expected not in topics:
             raise AssertionError(f"help topic missing: {expected}")
 
@@ -58,6 +71,48 @@ def main() -> None:
         raise AssertionError("gateway help did not include client base URL")
     if "X-OpenWebUI-Chat-Id" not in gateway or "X-Opencode-Session" not in gateway:
         raise AssertionError("gateway help did not include native client identity headers")
+
+    integrations = run_cli("help", "integrations")
+    if "opencode-config" not in integrations or "X-Capsule-Thread" not in integrations:
+        raise AssertionError("integrations help did not include opencode config generation")
+
+    with tempfile.TemporaryDirectory(prefix="session-capsules-opencode-") as temp:
+        temp_path = Path(temp)
+        out_path = temp_path / "opencode.generated.json"
+        payload = json.loads(
+            run_cli(
+                "integration",
+                "opencode-config",
+                "--workspace",
+                str(temp_path / "repo"),
+                "--session",
+                "session-42",
+                "--prefill",
+                "user_default",
+                "--gateway-url",
+                "http://127.0.0.1:8765",
+                "--out",
+                str(out_path),
+                "--json",
+            )
+        )
+        if payload.get("integration_type") != "opencode_config":
+            raise AssertionError("opencode integration command did not report the expected type")
+        if not payload.get("thread", "").startswith("opencode-"):
+            raise AssertionError("opencode integration command did not derive a thread id")
+        generated = json.loads(out_path.read_text(encoding="utf-8"))
+        provider = generated["provider"]["session-capsules"]
+        options = provider["options"]
+        headers = options["headers"]
+        if options.get("apiKey") != "{env:CAPSULE_GATEWAY_TOKEN}":
+            raise AssertionError("opencode config did not keep gateway token as an environment reference")
+        if headers.get("X-Capsule-Thread") != payload["thread"]:
+            raise AssertionError("opencode config did not write a concrete capsule thread header")
+        if headers.get("X-Capsule-Prefill") != "user_default":
+            raise AssertionError("opencode config did not write the selected prefill header")
+        if "gateway-token" in out_path.read_text(encoding="utf-8").lower():
+            raise AssertionError("opencode config appears to contain an inline gateway token")
+        print("opencode integration config generation smoke test ok")
 
     transport = run_cli("help", "transport")
     if "/api/capsules/export" not in transport or "application/vnd.session-capsule.scap" not in transport:

@@ -282,6 +282,12 @@ Open WebUI and opencode setup examples live in:
 - [examples/integrations/opencode.capsule-provider.jsonc](/X:/Experiments/session-capsules/examples/integrations/opencode.capsule-provider.jsonc)
 - [examples/integrations/start-opencode-capsule.ps1](/X:/Experiments/session-capsules/examples/integrations/start-opencode-capsule.ps1)
 
+Generate an opencode provider config with concrete capsule identity headers:
+
+```powershell
+py -3 .\scripts\capsule_cli.py integration opencode-config --workspace . --session default --prefill user_default --out .\.capsules\integrations\opencode.generated.json
+```
+
 Run a Model Plane job packet through the standalone harness:
 
 ```powershell

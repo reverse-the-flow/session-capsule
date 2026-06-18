@@ -125,6 +125,7 @@ Start here:
 More:
   capsule help config
   capsule help gateway
+  capsule help integrations
   capsule help transport
   capsule help security
   capsule help storage
@@ -256,6 +257,26 @@ Discover the full identity contract:
 
 For gateway upload/download endpoints:
   capsule help transport""",
+    "integrations": """Integrations should point existing clients at the local gateway and pass stable identity headers.
+
+Preferred gateway target:
+  http://127.0.0.1:8765/v1
+
+Preferred identity headers:
+  X-Capsule-Thread
+  X-Capsule-Workspace
+  X-Capsule-Prefill
+
+Generate an opencode provider config with concrete capsule headers:
+  py -3 .\\scripts\\capsule_cli.py integration opencode-config --workspace . --session default --prefill user_default --out .\\.capsules\\integrations\\opencode.generated.json
+
+The generated opencode config keeps the gateway token as an environment reference:
+  {env:CAPSULE_GATEWAY_TOKEN}
+
+Open WebUI can use the gateway as an OpenAI-compatible API base URL and should forward chat/user headers when available.
+
+More:
+  docs/integrations.md""",
     "transport": """Gateway transport lets a local UI or Model Plane move .scap bundles without reimplementing export/import.
 
 Endpoints:
@@ -3170,6 +3191,84 @@ def capsule_help(args: argparse.Namespace) -> int:
     return 0
 
 
+def opencode_thread_id(workspace: str, session: str | None) -> str:
+    seed = workspace if not session else f"{workspace}\n{session}"
+    return "opencode-" + digest_text(seed).split(":", 1)[1][:12]
+
+
+def normalize_openai_base_url(value: str) -> str:
+    base = value.rstrip("/")
+    if base.endswith("/v1"):
+        return base
+    return base + "/v1"
+
+
+def opencode_config_payload(args: argparse.Namespace) -> JSONDict:
+    workspace = str(Path(args.workspace).resolve()) if args.workspace else str(Path.cwd().resolve())
+    session = str(args.session).strip() if args.session else None
+    thread = slugify(args.thread) if args.thread else opencode_thread_id(workspace, session)
+    provider_id = slugify(args.provider_id)
+    model_id = slugify(args.model_id)
+    model_ref = f"{provider_id}/{model_id}"
+    headers: JSONDict = {
+        "X-Capsule-Workspace": workspace,
+        "X-Capsule-Thread": thread,
+    }
+    if args.prefill:
+        headers["X-Capsule-Prefill"] = slugify(args.prefill)
+    config: JSONDict = {
+        "$schema": "https://opencode.ai/config.json",
+        "provider": {
+            provider_id: {
+                "npm": "@ai-sdk/openai-compatible",
+                "name": "Session Capsules",
+                "options": {
+                    "baseURL": normalize_openai_base_url(args.gateway_url),
+                    "apiKey": f"{{env:{args.gateway_token_env}}}",
+                    "headers": headers,
+                },
+                "models": {
+                    model_id: {
+                        "name": args.model_name,
+                    }
+                },
+            }
+        },
+        "model": model_ref,
+    }
+    return {
+        "schema_version": "0.1",
+        "integration_type": "opencode_config",
+        "workspace": workspace,
+        "session": session,
+        "thread": thread,
+        "prefill": slugify(args.prefill) if args.prefill else None,
+        "openai_base_url": normalize_openai_base_url(args.gateway_url),
+        "gateway_token_env": args.gateway_token_env,
+        "config": config,
+        "command": ["opencode", "--model", model_ref],
+    }
+
+
+def integration_opencode_config(args: argparse.Namespace) -> int:
+    payload = opencode_config_payload(args)
+    if args.out:
+        write_json(args.out, payload["config"])
+        payload["out"] = str(args.out)
+    if args.json:
+        print(json.dumps(payload, indent=2))
+        return 0
+    if args.out:
+        print(f"wrote opencode config: {args.out}")
+    print(f"thread: {payload['thread']}")
+    print(f"workspace: {payload['workspace']}")
+    print(f"openai_base_url: {payload['openai_base_url']}")
+    print(f"gateway_token_env: {payload['gateway_token_env']}")
+    print("command:")
+    print(subprocess.list2cmdline(payload["command"]))
+    return 0
+
+
 def require_job_param(params: JSONDict, key: str) -> Any:
     if key not in params:
         raise RuntimeError(f"Job params missing required key: {key}")
@@ -4320,6 +4419,23 @@ def build_parser() -> argparse.ArgumentParser:
     add_gateway_client_args(gateway_delete)
     add_gateway_bundle_id_arg(gateway_delete)
     gateway_delete.set_defaults(func=gateway_delete_command)
+
+    integration_cmd = subcommands.add_parser("integration")
+    integration_sub = integration_cmd.add_subparsers(dest="integration_command", required=True)
+
+    opencode_config = integration_sub.add_parser("opencode-config", help="Render an opencode provider config with stable capsule headers.")
+    opencode_config.add_argument("--workspace", help="Workspace path or id. Defaults to the current directory.")
+    opencode_config.add_argument("--session", help="Optional opencode session id to include in the derived thread id.")
+    opencode_config.add_argument("--thread", help="Explicit capsule thread id. Defaults to a workspace/session-derived id.")
+    opencode_config.add_argument("--prefill", default="user_default", help="Prefill capsule name to attach on new gateway threads.")
+    opencode_config.add_argument("--gateway-url", default="http://127.0.0.1:8765", help="Gateway root URL or /v1 URL.")
+    opencode_config.add_argument("--gateway-token-env", default="CAPSULE_GATEWAY_TOKEN", help="Environment variable opencode should read as the API key.")
+    opencode_config.add_argument("--provider-id", default="session-capsules")
+    opencode_config.add_argument("--model-id", default="fake-model")
+    opencode_config.add_argument("--model-name", default="Capsule Gateway Model")
+    opencode_config.add_argument("--out", type=Path, help="Write only the opencode provider config JSON to this path.")
+    opencode_config.add_argument("--json", action="store_true", help="Print integration metadata plus generated config.")
+    opencode_config.set_defaults(func=integration_opencode_config)
 
     state_cmd = subcommands.add_parser("state")
     state_sub = state_cmd.add_subparsers(dest="state_command", required=True)

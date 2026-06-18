@@ -322,6 +322,7 @@ Initial status:
 - `examples/integrations/opencode.capsule-provider.jsonc` defines a custom OpenAI-compatible provider with capsule headers supplied from environment variables.
 - The gateway maps `X-OpenWebUI-Chat-Id` and `X-OpenWebUI-User-Id` into thread/workspace metadata.
 - The gateway also accepts `X-Opencode-Thread`, `X-Opencode-Session`, and `X-Opencode-Workspace` for future native opencode hooks.
+- `capsule_cli.py integration opencode-config` renders an opencode provider config with concrete workspace, thread, and prefill headers while keeping the gateway token as an environment reference.
 
 ## Stage 8: Model Plane Integration
 
@@ -648,6 +649,7 @@ Initial status:
 - Generic clients need `X-Capsule-Thread`.
 - Open WebUI needs `X-OpenWebUI-Chat-Id`; `X-OpenWebUI-User-Id` is optional workspace metadata.
 - opencode needs `X-Opencode-Thread` or `X-Opencode-Session`; `X-Opencode-Workspace` is optional workspace metadata.
+- `integration opencode-config` can write concrete `X-Capsule-*` headers for CLI-first opencode launches when native session hooks are not available.
 - `scripts/test_capsule_gateway_fake_backend.py` verifies identity contract discovery and hard endpoint readiness discovery.
 - `docs/integrations.md`, `docs/protocol.md`, and `docs/transport.md` document the contract.
 
@@ -711,5 +713,5 @@ Initial status:
 ## Open Questions
 
 - Which live `llama.cpp` server builds should be captured with `endpoint doctor` and listed in the endpoint matrix?
-- Which opencode hook should fill per-session capsule headers automatically instead of relying on launch-time environment variables?
+- Which native opencode hook can replace generated provider configs once opencode exposes stable per-session metadata?
 - Which cross-platform encryption backend should provide the future sealed `.scap` envelope without inventing local crypto?

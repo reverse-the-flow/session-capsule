@@ -15,6 +15,7 @@ It performs:
 - schema/example validation, including restore-failure schema fields
 - Model Plane gateway launch-profile schema/example validation
 - conceptual CLI help smoke test
+- opencode integration config generation smoke test
 - state-location help and `state info` smoke test
 - fake `llama.cpp` endpoint doctor slot probe, endpoint compatibility matrix, hard capsule save/restore, shutdown job, and failed-restore fallback smoke test
 - state-relative ledger, prefill, and hard snapshot reference smoke test
@@ -36,6 +37,7 @@ Verified on 2026-06-18:
 ```text
 schema examples ok
 CLI conceptual help smoke test ok
+opencode integration config generation smoke test ok
 fake llama.cpp CLI smoke test ok
 .scap export/import smoke test ok
 storage config and GC smoke test ok
