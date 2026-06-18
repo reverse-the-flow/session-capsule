@@ -558,8 +558,9 @@ Initial status:
 - `scripts/capsule_cli.py` can create hard checkpoints with `checkpoint --hard --slot N`.
 - `resume --thread X --slot N` restores the latest compatible hard capsule.
 - `resume --append-diff` posts transcript messages after the checkpoint into the restored slot with `cache_prompt=true`.
+- If hard restore fails, `resume --append-diff` marks that capsule `restore_failed`, replays the canonical transcript with `cache_prompt=false`, and saves a replacement hard checkpoint.
 - `shutdown --thread X --slot N` saves a dirty thread before model unload.
-- `scripts/test_capsule_cli_fake_llamacpp.py` validates the save/restore/append-diff request path against a fake slot server.
+- `scripts/test_capsule_cli_fake_llamacpp.py` validates the save/restore/append-diff request path and failed-restore fallback against a fake slot server.
 
 ## Open Questions
 

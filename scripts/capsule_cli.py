@@ -345,6 +345,7 @@ No endpoint:
 
 Hard restore not working:
   py -3 .\\scripts\\capsule_cli.py endpoint doctor local-llamacpp --strict
+  resume --append-diff marks failed hard capsules restore_failed, replays the canonical transcript, and saves a replacement checkpoint.
 
 Storage growing:
   py -3 .\\scripts\\capsule_cli.py stats
@@ -707,12 +708,13 @@ def chat_completion(
     temperature: float,
     timeout: float,
     chat_path: str,
+    cache_prompt: bool = True,
 ) -> tuple[JSONDict, float]:
     slot_field = endpoint.get("slot_api", {}).get("slot_field", "id_slot")
     payload: JSONDict = {
         "messages": messages,
         "stream": False,
-        "cache_prompt": True,
+        "cache_prompt": cache_prompt,
         "max_tokens": max_tokens,
         "temperature": temperature,
     }
@@ -1183,6 +1185,49 @@ def find_capsule_link(ledger: JSONDict, capsule_id: str | None) -> JSONDict | No
     return None
 
 
+def mark_hard_capsule_restore_failed(store: Store, ledger: JSONDict, link: JSONDict, manifest: JSONDict, error_text: str) -> None:
+    lifecycle = manifest_lifecycle(manifest)
+    lifecycle["last_restore_failed_at"] = now_iso()
+    lifecycle["last_restore_error"] = error_text
+    notes = manifest.setdefault("notes", [])
+    if isinstance(notes, list):
+        notes.append("Hard snapshot restore failed; transcript replay remains canonical.")
+    write_json(store.root / link["manifest_ref"], manifest)
+
+    ledger_link = find_capsule_link(ledger, str(link["capsule_id"]))
+    if ledger_link is not None:
+        ledger_link["status"] = "restore_failed"
+        ledger_link["last_restore_failed_at"] = lifecycle["last_restore_failed_at"]
+
+    fallback_capsule_id = None
+    fallback_token = 0
+    parent_id = link.get("parent_capsule_id")
+    parent = find_capsule_link(ledger, str(parent_id) if parent_id else None)
+    if parent is not None and str(parent.get("kind", "")).endswith("_prefill"):
+        fallback_capsule_id = parent["capsule_id"]
+        fallback_token = int(parent.get("token_end", 0))
+    if ledger.get("active_capsule_id") == link["capsule_id"]:
+        ledger["active_capsule_id"] = fallback_capsule_id
+
+    rows = read_jsonl(store.transcript_path(str(ledger["thread_id"])))
+    replay_end = transcript_or_capsule_token_end(rows, ledger)
+    ledger["open_diffs"] = [
+        {
+            "after_capsule_id": fallback_capsule_id,
+            "token_start": fallback_token,
+            "token_end": replay_end,
+            "transcript_ref": ledger["transcript_ref"],
+        }
+    ]
+    ledger["fallback"] = {
+        "mode": "replay_from_checkpoint" if fallback_capsule_id else "full_replay",
+        "replay_start_token": fallback_token,
+        "reason": f"Hard capsule {link['capsule_id']} could not be restored; replay the canonical transcript.",
+    }
+    ledger["updated_at"] = now_iso()
+    write_json(store.ledger_path(str(ledger["thread_id"])), ledger)
+
+
 def build_checkpoint_segments(store: Store, ledger: JSONDict, rows: list[JSONDict], parent_capsule_id: str | None) -> list[JSONDict]:
     segments: list[JSONDict] = []
     previous_end = 0
@@ -1472,7 +1517,12 @@ def find_latest_restorable_manifest(store: Store, ledger: JSONDict, capsule_id: 
     else:
         links = list(reversed(links))
     for link in links:
+        if link.get("status") in {"missing", "restore_failed"}:
+            continue
         manifest = load_manifest_ref(store, link["manifest_ref"])
+        lifecycle = manifest.get("lifecycle", {})
+        if isinstance(lifecycle, dict) and lifecycle.get("snapshot_present") is False:
+            continue
         if manifest.get("storage", {}).get("mode") != "soft":
             return link, manifest
     raise RuntimeError("No restorable hard capsule found for this thread")
@@ -1503,6 +1553,21 @@ def diff_messages_after(rows: list[JSONDict], token_end: int) -> list[JSONDict]:
     return messages
 
 
+def replay_messages_from_active_context(store: Store, ledger: JSONDict, rows: list[JSONDict]) -> list[JSONDict]:
+    messages: list[JSONDict] = []
+    active = find_capsule_link(ledger, ledger.get("active_capsule_id"))
+    if active is not None and str(active.get("kind", "")).endswith("_prefill"):
+        manifest = load_manifest_ref(store, active["manifest_ref"])
+        source_ref = manifest.get("prefill_source", {}).get("source_ref")
+        if source_ref:
+            source_path = store.root / str(source_ref)
+            if source_path.exists():
+                messages.append({"role": "system", "content": source_path.read_text(encoding="utf-8")})
+    for row in rows:
+        messages.append({"role": row["role"], "content": row["content"]})
+    return messages
+
+
 def resume_thread(args: argparse.Namespace) -> int:
     store = Store(args.state_dir)
     ledger = store.load_ledger(args.thread)
@@ -1515,7 +1580,49 @@ def resume_thread(args: argparse.Namespace) -> int:
     if not runtime_snapshot_ref:
         raise RuntimeError("Capsule has no runtime snapshot reference")
 
-    restore_response, restore_ms = slot_action(endpoint, args.slot, "restore", runtime_snapshot_ref, args.timeout)
+    try:
+        restore_response, restore_ms = slot_action(endpoint, args.slot, "restore", runtime_snapshot_ref, args.timeout)
+    except Exception as exc:  # noqa: BLE001 - restore failure should degrade to replay fallback.
+        error_text = str(exc)
+        print(f"warning: restore failed for {link['capsule_id']}: {error_text}")
+        mark_hard_capsule_restore_failed(store, ledger, link, manifest, error_text)
+        ledger = store.load_ledger(args.thread)
+        rows = read_jsonl(store.transcript_path(args.thread))
+        replay_start = int(ledger.get("fallback", {}).get("replay_start_token", 0))
+        print(f"fallback: {ledger['fallback']['mode']} from token {replay_start}")
+        if not args.append_diff:
+            print("restore failed before append; replay the canonical transcript before continuing")
+            return 0
+
+        messages = replay_messages_from_active_context(store, ledger, rows)
+        if messages:
+            response, replay_ms = chat_completion(
+                endpoint,
+                args.slot,
+                messages,
+                args.max_tokens,
+                args.temperature,
+                args.timeout,
+                args.chat_path,
+                cache_prompt=False,
+            )
+            print(f"replayed {len(messages)} canonical messages ({replay_ms} ms)")
+            finish_reason = response.get("choices", [{}])[0].get("finish_reason") if isinstance(response.get("choices"), list) else None
+            if finish_reason:
+                print(f"finish_reason: {finish_reason}")
+        else:
+            print("no transcript messages to replay")
+        capsule_id = create_hard_checkpoint(
+            store,
+            args.thread,
+            args.slot,
+            f"fallback_{timestamp_id()}",
+            args.timeout,
+            None,
+        )
+        print(f"saved fallback checkpoint: {capsule_id}")
+        return 0
+
     print(f"restored {link['capsule_id']} into slot {args.slot} ({restore_ms} ms)")
 
     if args.append_diff:

@@ -20,6 +20,7 @@ CLI = ROOT / "scripts" / "capsule_cli.py"
 
 class FakeLlamaHandler(BaseHTTPRequestHandler):
     events: list[dict[str, Any]] = []
+    fail_restore_once = False
 
     def log_message(self, format: str, *args: Any) -> None:  # noqa: A002
         return
@@ -76,6 +77,10 @@ class FakeLlamaHandler(BaseHTTPRequestHandler):
                 )
                 return
             if action == "restore":
+                if FakeLlamaHandler.fail_restore_once:
+                    FakeLlamaHandler.fail_restore_once = False
+                    self.send_json({"error": "forced restore failure"}, status=500)
+                    return
                 self.send_json(
                     {
                         "id_slot": slot_id,
@@ -211,6 +216,43 @@ def main() -> None:
                 raise AssertionError("slot restore request was not observed")
             if "/v1/chat/completions" not in paths:
                 raise AssertionError("append-diff chat completion was not observed")
+
+            run_cli(state, "thread", "start", "--endpoint", "local-llamacpp", "--name", "fallback-thread")
+            run_cli(state, "thread", "append", "--thread", "fallback-thread", "--role", "user", "--content", "restore fallback prompt")
+            run_cli(state, "checkpoint", "--thread", "fallback-thread", "--hard", "--slot", "0", "--capsule-id", "cap_restore_fail")
+            run_cli(
+                state,
+                "thread",
+                "append",
+                "--thread",
+                "fallback-thread",
+                "--role",
+                "assistant",
+                "--content",
+                "diff after failed restore",
+            )
+            FakeLlamaHandler.fail_restore_once = True
+            fallback_resume = run_cli(state, "resume", "--thread", "fallback-thread", "--slot", "1", "--append-diff")
+            if "warning: restore failed for cap_restore_fail" not in fallback_resume.stdout:
+                raise AssertionError("resume did not report restore failure fallback")
+            if "saved fallback checkpoint:" not in fallback_resume.stdout:
+                raise AssertionError("resume did not save a replacement checkpoint after replay fallback")
+
+            fallback_ledger = json.loads((state / "threads" / "fallback-thread" / "thread-ledger.json").read_text(encoding="utf-8"))
+            failed_link = next(item for item in fallback_ledger["capsules"] if item["capsule_id"] == "cap_restore_fail")
+            if failed_link["status"] != "restore_failed":
+                raise AssertionError("failed restore capsule was not marked restore_failed")
+            if not str(fallback_ledger["active_capsule_id"]).startswith("fallback_"):
+                raise AssertionError("fallback replay checkpoint did not become active")
+            replay_events = [
+                event
+                for event in FakeLlamaHandler.events
+                if event["path"] == "/v1/chat/completions"
+                and event["payload"].get("cache_prompt") is False
+                and len(event["payload"].get("messages", [])) == 2
+            ]
+            if not replay_events:
+                raise AssertionError("restore fallback did not replay the canonical transcript with cache_prompt=false")
     finally:
         server.shutdown()
         server.server_close()

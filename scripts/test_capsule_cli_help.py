@@ -65,6 +65,10 @@ def main() -> None:
     ):
         raise AssertionError("security help did not explain integrity boundary")
 
+    troubleshooting = run_cli("help", "troubleshooting")
+    if "restore_failed" not in troubleshooting:
+        raise AssertionError("troubleshooting help did not include restore failure fallback")
+
     print("CLI conceptual help smoke test ok")
 
 

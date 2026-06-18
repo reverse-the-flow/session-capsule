@@ -147,6 +147,8 @@ py -3 .\scripts\capsule_cli.py shutdown --thread research-loop-small --slot 1 --
 
 If the model server runs in Docker, pass `--runtime-filename` when saving hard checkpoints so the filename is visible from inside the container's `--slot-save-path` mount.
 
+If hard restore fails, `resume --append-diff` marks that capsule `restore_failed`, replays the canonical transcript into the slot with `cache_prompt=false`, and saves a replacement hard checkpoint. Without `--append-diff`, it reports the replay fallback plan without mutating the runtime slot.
+
 Create and use a reusable prefill capsule:
 
 ```powershell

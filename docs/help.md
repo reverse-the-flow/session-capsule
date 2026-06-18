@@ -117,6 +117,7 @@ It does not delete:
 - pinned thread capsules
 
 If GC deletes a hard snapshot blob, the ledger link is marked `missing` and transcript replay remains the fallback.
+If hard restore fails, `resume --append-diff` marks that capsule `restore_failed`, replays the canonical transcript, and saves a replacement checkpoint.
 
 ## Gateway
 

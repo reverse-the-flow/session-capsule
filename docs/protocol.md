@@ -85,7 +85,7 @@ Thread reload should happen in this order:
 7. Save a new checkpoint and update the thread ledger.
 ```
 
-If restore fails, fallback to transcript replay and write a new checkpoint when the runtime reaches a stable boundary.
+If restore fails, fallback to transcript replay and write a new checkpoint when the runtime reaches a stable boundary. The CLI marks that capsule `restore_failed` rather than deleting the snapshot, skips it for future automatic restore, replays with `cache_prompt=false`, and saves a replacement checkpoint when `--append-diff` is requested.
 
 The CLI implements this as:
 
@@ -93,7 +93,7 @@ The CLI implements this as:
 py -3 .\scripts\capsule_cli.py resume --thread THREAD --slot 1 --append-diff
 ```
 
-Without `--append-diff`, `resume` restores the hard capsule and reports the pending transcript diff range. This is useful when the user wants to inspect state before asking the runtime to continue.
+Without `--append-diff`, `resume` restores the hard capsule and reports the pending transcript diff range. If restore fails in that mode, it records the fallback plan but does not mutate the runtime slot.
 
 ## Full And Diff
 
