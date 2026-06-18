@@ -47,6 +47,7 @@ That matters most for:
 - [docs/help.md](/X:/Experiments/session-capsules/docs/help.md) - quick conceptual help and CLI help topic map
 - [docs/protocol.md](/X:/Experiments/session-capsules/docs/protocol.md) - manifest, ledger, reload order, storage modes, and request-path integration model
 - [docs/configuration.md](/X:/Experiments/session-capsules/docs/configuration.md) - persistent settings, launch flags, storage budget, pinning, and GC
+- [docs/transport.md](/X:/Experiments/session-capsules/docs/transport.md) - gateway `.scap` upload/download API for Model Plane and local UI integration
 - [docs/integrations.md](/X:/Experiments/session-capsules/docs/integrations.md) - thin Open WebUI and opencode integration guidance for the local gateway
 - [docs/model-plane.md](/X:/Experiments/session-capsules/docs/model-plane.md) - Model Plane boundary and job-packet contract
 - [docs/verification.md](/X:/Experiments/session-capsules/docs/verification.md) - smoke-test command and verification boundary
@@ -208,6 +209,18 @@ Point an OpenAI-compatible client at `http://127.0.0.1:8765/v1`. The v0 gateway 
 - `X-Capsule-Workspace`: workspace/project id for ledger metadata
 - `X-Capsule-Prefill`: named prefill capsule to attach when a thread is first created
 
+The gateway also exposes local `.scap` bundle transport:
+
+```text
+POST   /api/capsules/export
+GET    /api/capsules/bundles
+GET    /api/capsules/bundles/{bundle_id}
+POST   /api/capsules/import
+DELETE /api/capsules/bundles/{bundle_id}
+```
+
+Bundles are stored under `.capsules/bundles/`. Export defaults to ledger-only; hard snapshots require `include_snapshots=true`.
+
 Open WebUI and opencode setup examples live in:
 
 - [examples/integrations/open-webui.env.example](/X:/Experiments/session-capsules/examples/integrations/open-webui.env.example)
@@ -249,4 +262,5 @@ The short version:
 4. Add local hard capsules through `llama.cpp` slot save/restore.
 5. Add user prefill capsules and `.scap` export/import.
 6. Add a local OpenAI-compatible capsule gateway.
-7. Add native app integrations and Model Plane coordination only after the standalone primitive works.
+7. Add gateway upload/download transport for `.scap` bundles.
+8. Add native app integrations and Model Plane coordination only after the standalone primitive works.

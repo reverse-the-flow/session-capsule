@@ -370,6 +370,7 @@ Recommended order:
 8. Stage 7: native integrations
 9. Stage 8: Model Plane
 10. Stage 9: capsule storage management
+11. Stage 10: gateway bundle transport
 
 Do not start with gateway or Model Plane. They become simpler after the ledger, manifest, and CLI lifecycle are real.
 
@@ -398,6 +399,40 @@ Initial status:
 - `gc --apply` deletes eligible hard snapshot blobs and marks their ledger links as `missing`.
 - `schemas/capsule-config.schema.json` and `examples/capsule-config.example.json` define the first config contract.
 - `scripts/test_capsule_cli_storage_gc.py` validates config, pinning, latest-per-thread protection, and GC behavior.
+
+## Stage 10: Gateway Bundle Transport
+
+Goal: Let Model Plane or a local UI upload/download `.scap` bundles through the gateway without reimplementing export/import mechanics.
+
+Implementation steps:
+
+- Add a gateway export endpoint backed by the existing CLI export path.
+- Store gateway-created bundles under `.capsules/bundles/`.
+- Add bundle listing and download endpoints.
+- Add raw `.scap` upload and import.
+- Add import-by-existing-bundle for local control-plane workflows.
+- Add a stored-bundle delete endpoint for cleanup after transfer.
+- Keep export ledger-only by default.
+- Require explicit opt-in before including hard local snapshots.
+- Enforce a gateway upload-size limit.
+- Keep transport local/control-plane oriented; Model Plane owns auth, UI, remote exposure, TTL, audit, and policy.
+
+Exit criteria:
+
+- A local UI can export a thread and download the resulting `.scap`.
+- A local UI can upload a `.scap` and import it into the gateway state.
+- Model Plane can call the gateway for capsule transport without becoming the capsule archive format implementation.
+
+Initial status:
+
+- `POST /api/capsules/export` creates a `.scap` bundle.
+- `GET /api/capsules/bundles` lists stored local bundles.
+- `GET /api/capsules/bundles/{bundle_id}` downloads a stored bundle with capsule-specific headers.
+- `POST /api/capsules/import` imports either an existing stored bundle or raw uploaded `.scap` bytes.
+- `DELETE /api/capsules/bundles/{bundle_id}` deletes a stored bundle without deleting imported thread state.
+- Bundle ids are slugged and scoped to `.capsules/bundles/`.
+- The gateway launch flag `--max-bundle-bytes` caps raw upload size.
+- `scripts/test_capsule_gateway_fake_backend.py` validates export, list, download, raw upload import, and delete through the gateway.
 
 ## First Three Implementation Tickets
 

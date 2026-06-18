@@ -118,6 +118,34 @@ def post_json(url: str, payload: dict[str, Any], headers: dict[str, str]) -> tup
         return body, {key: value for key, value in response.headers.items()}
 
 
+def get_json(url: str) -> dict[str, Any]:
+    with request.urlopen(url, timeout=20) as response:
+        return json.loads(response.read().decode("utf-8"))
+
+
+def get_bytes(url: str) -> tuple[bytes, dict[str, str]]:
+    with request.urlopen(url, timeout=20) as response:
+        return response.read(), {key: value for key, value in response.headers.items()}
+
+
+def post_bytes(url: str, payload: bytes, headers: dict[str, str]) -> tuple[dict[str, Any], dict[str, str]]:
+    req = request.Request(
+        url,
+        data=payload,
+        headers={"Content-Type": "application/vnd.session-capsule.scap", **headers},
+        method="POST",
+    )
+    with request.urlopen(req, timeout=20) as response:
+        body = json.loads(response.read().decode("utf-8"))
+        return body, {key: value for key, value in response.headers.items()}
+
+
+def delete_json(url: str) -> dict[str, Any]:
+    req = request.Request(url, method="DELETE")
+    with request.urlopen(req, timeout=20) as response:
+        return json.loads(response.read().decode("utf-8"))
+
+
 def main() -> None:
     FakeBackendHandler.events = []
     FakeBackendHandler.completion_count = 0
@@ -165,6 +193,7 @@ def main() -> None:
                 timeout=20.0,
                 default_prefill=None,
                 default_thread_prefix="gateway",
+                max_bundle_bytes=10 * 1000 * 1000,
                 lock=threading.Lock(),
             )
             gateway = capsule_gateway.create_server(config)
@@ -244,6 +273,103 @@ def main() -> None:
             )
             if open_webui_ledger.get("workspace_ref") != "user-alpha":
                 raise AssertionError("gateway did not derive workspace from Open WebUI user id")
+
+            exported, export_headers = post_json(
+                f"{gateway_url}/api/capsules/export",
+                {
+                    "thread_id": "gateway-thread",
+                    "bundle_id": "gateway-thread-test",
+                    "include_snapshots": False,
+                },
+                {},
+            )
+            if export_headers.get("X-Capsule-Export") != "ok":
+                raise AssertionError("gateway export endpoint did not mark response")
+            if exported["bundle_id"] != "gateway-thread-test":
+                raise AssertionError("gateway export did not preserve requested bundle id")
+            if exported.get("includes_snapshots") is not False:
+                raise AssertionError("gateway export should default to ledger-only bundle semantics")
+
+            bundle_list = get_json(f"{gateway_url}/api/capsules/bundles")
+            if not any(item["bundle_id"] == "gateway-thread-test" for item in bundle_list["bundles"]):
+                raise AssertionError("exported bundle was not listed")
+
+            bundle_bytes, download_headers = get_bytes(f"{gateway_url}/api/capsules/bundles/gateway-thread-test")
+            if not bundle_bytes.startswith(b"PK"):
+                raise AssertionError("downloaded bundle was not a zip/scap payload")
+            if download_headers.get("X-Capsule-Bundle-Id") != "gateway-thread-test":
+                raise AssertionError("download did not include bundle id header")
+
+            imported_state = Path(temp) / "imported" / ".capsules"
+            run_cli(
+                imported_state,
+                "endpoint",
+                "add",
+                "local-llamacpp",
+                "--type",
+                "llamacpp",
+                "--base-url",
+                backend_url,
+                "--runtime-build",
+                "fake-build",
+                "--model-ref",
+                "fake-model",
+                "--model-hash",
+                "sha256-fake-model",
+                "--tokenizer-hash",
+                "sha256-fake-tokenizer",
+                "--context-limit",
+                "8192",
+            )
+            import_config = capsule_gateway.GatewayConfig(
+                state_dir=imported_state.resolve(),
+                endpoint_id="local-llamacpp",
+                host="127.0.0.1",
+                port=0,
+                slot=0,
+                checkpoint_mode="soft",
+                timeout=20.0,
+                default_prefill=None,
+                default_thread_prefix="gateway",
+                max_bundle_bytes=10 * 1000 * 1000,
+                lock=threading.Lock(),
+            )
+            import_gateway = capsule_gateway.create_server(import_config)
+            import_gateway_thread = threading.Thread(target=import_gateway.serve_forever, daemon=True)
+            import_gateway_thread.start()
+            import_gateway_url = f"http://127.0.0.1:{import_gateway.server_port}"
+            try:
+                imported, import_headers = post_bytes(
+                    f"{import_gateway_url}/api/capsules/import",
+                    bundle_bytes,
+                    {"X-Capsule-Bundle-Id": "uploaded-gateway-thread"},
+                )
+                if import_headers.get("X-Capsule-Import") != "ok":
+                    raise AssertionError("gateway import endpoint did not mark response")
+                if imported["thread_id"] != "gateway-thread":
+                    raise AssertionError("imported bundle did not restore expected thread")
+                imported_ledger = imported_state / "threads" / "gateway-thread" / "thread-ledger.json"
+                if not imported_ledger.exists():
+                    raise AssertionError("raw upload import did not create thread ledger")
+                imported_bundle_list = get_json(f"{import_gateway_url}/api/capsules/bundles")
+                if not any(item["bundle_id"] == "uploaded-gateway-thread" for item in imported_bundle_list["bundles"]):
+                    raise AssertionError("raw upload import did not retain uploaded bundle")
+                reimported, reimport_headers = post_json(
+                    f"{import_gateway_url}/api/capsules/import",
+                    {"bundle_id": "uploaded-gateway-thread", "force": True},
+                    {},
+                )
+                if reimport_headers.get("X-Capsule-Import") != "ok":
+                    raise AssertionError("stored bundle import endpoint did not mark response")
+                if reimported["thread_id"] != "gateway-thread":
+                    raise AssertionError("stored bundle import did not restore expected thread")
+            finally:
+                import_gateway.shutdown()
+                import_gateway.server_close()
+
+            deleted = delete_json(f"{gateway_url}/api/capsules/bundles/gateway-thread-test")
+            if deleted.get("deleted") is not True:
+                raise AssertionError("gateway did not delete exported bundle")
     finally:
         if gateway is not None:
             gateway.shutdown()

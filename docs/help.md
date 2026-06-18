@@ -10,6 +10,7 @@ thread     = canonical transcript plus capsule ledger
 capsule    = checkpoint manifest, optionally with a hard snapshot
 prefill    = reusable root context
 gateway    = local OpenAI-compatible request-path layer
+transport  = gateway API for .scap upload/download
 config     = persistent policy for capsule state
 ```
 
@@ -59,6 +60,7 @@ The CLI help topics are:
 - `thread`
 - `prefill`
 - `gateway`
+- `transport`
 - `storage`
 - `bundles`
 - `model-plane`
@@ -94,6 +96,7 @@ Launch flags should describe the current process:
 - `--slot`
 - `--default-prefill`
 - `--timeout`
+- `--max-bundle-bytes`
 
 These are good Model Plane launch-profile fields.
 
@@ -140,6 +143,32 @@ http://127.0.0.1:8765/v1
 ```
 
 Gateway v0 is non-streaming. Clients should send `stream=false`.
+
+## Transport
+
+Gateway transport exposes `.scap` bundles to local UIs or Model Plane:
+
+```text
+POST   /api/capsules/export
+GET    /api/capsules/bundles
+GET    /api/capsules/bundles/{bundle_id}
+POST   /api/capsules/import
+DELETE /api/capsules/bundles/{bundle_id}
+```
+
+Bundles live under:
+
+```text
+.capsules/bundles/
+```
+
+Export is ledger-only by default. Hard snapshots require explicit opt-in with `include_snapshots=true`.
+
+Raw uploads are capped by the gateway launch flag:
+
+```powershell
+py -3 .\scripts\capsule_gateway.py --state-dir .\.capsules --endpoint local-llamacpp --max-bundle-bytes 5GB
+```
 
 ## Model Plane
 

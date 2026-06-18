@@ -162,6 +162,24 @@ Invoke-RestMethod `
   -Body '{"thread_id":"THREAD","mode":"hard","slot":0}'
 ```
 
+## Bundle Transport Controls
+
+The gateway also exposes `.scap` upload/download controls for local UIs and Model Plane:
+
+```text
+POST   /api/capsules/export
+GET    /api/capsules/bundles
+GET    /api/capsules/bundles/{bundle_id}
+POST   /api/capsules/import
+DELETE /api/capsules/bundles/{bundle_id}
+```
+
+Transport details are in:
+
+```text
+docs/transport.md
+```
+
 ## Integration Rule
 
 The gateway is the missing layer. App integrations should stay thin:

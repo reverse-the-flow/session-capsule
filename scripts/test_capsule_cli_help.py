@@ -29,7 +29,7 @@ def run_cli(*args: str) -> str:
 
 def main() -> None:
     topics = run_cli("help", "--topics")
-    for expected in ["overview", "config", "gateway", "storage", "model-plane", "troubleshooting"]:
+    for expected in ["overview", "config", "gateway", "transport", "storage", "model-plane", "troubleshooting"]:
         if expected not in topics:
             raise AssertionError(f"help topic missing: {expected}")
 
@@ -44,6 +44,10 @@ def main() -> None:
     gateway = run_cli("help", "gateway")
     if "http://127.0.0.1:8765/v1" not in gateway:
         raise AssertionError("gateway help did not include client base URL")
+
+    transport = run_cli("help", "transport")
+    if "/api/capsules/export" not in transport or "application/vnd.session-capsule.scap" not in transport:
+        raise AssertionError("transport help did not include gateway bundle API")
 
     print("CLI conceptual help smoke test ok")
 

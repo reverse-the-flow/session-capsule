@@ -13,13 +13,19 @@ checkpointing.
 from __future__ import annotations
 
 import argparse
+import contextlib
 import json
+import re
 import threading
+import uuid
+import zipfile
 from dataclasses import dataclass
+from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
 from urllib import error, request
+from urllib.parse import unquote, urlparse
 
 import capsule_cli as cc
 
@@ -55,6 +61,7 @@ class GatewayConfig:
     timeout: float
     default_prefill: str | None
     default_thread_prefix: str
+    max_bundle_bytes: int
     lock: threading.Lock
 
 
@@ -114,6 +121,15 @@ def read_body(handler: BaseHTTPRequestHandler) -> JSONDict:
     return data
 
 
+def read_raw_body(handler: BaseHTTPRequestHandler, max_bytes: int) -> bytes:
+    length = int(handler.headers.get("Content-Length", "0"))
+    if length <= 0:
+        raise ValueError("Request body is empty")
+    if length > max_bytes:
+        raise ValueError(f"Request body exceeds max bundle size: {length} > {max_bytes}")
+    return handler.rfile.read(length)
+
+
 def send_json(handler: BaseHTTPRequestHandler, payload: Any, status: int = 200, headers: dict[str, str] | None = None) -> None:
     body = json_bytes(payload)
     handler.send_response(status)
@@ -146,6 +162,131 @@ def send_bytes(
 def ensure_endpoint(config: GatewayConfig) -> JSONDict:
     store = cc.Store(config.state_dir)
     return store.load_endpoint(config.endpoint_id)
+
+
+def bundles_dir(config: GatewayConfig) -> Path:
+    path = config.state_dir / "bundles"
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def safe_bundle_id(value: str) -> str:
+    raw_id = value.strip()
+    if raw_id.lower().endswith(".scap"):
+        raw_id = raw_id[:-5]
+    bundle_id = re.sub(r"[^A-Za-z0-9_.:-]+", "-", raw_id).strip("-")
+    if not bundle_id or bundle_id in {".", ".."}:
+        raise ValueError("Invalid bundle id")
+    return bundle_id
+
+
+def bundle_path(config: GatewayConfig, bundle_id: str) -> Path:
+    safe_id = safe_bundle_id(bundle_id)
+    path = (bundles_dir(config) / f"{safe_id}.scap").resolve()
+    root = bundles_dir(config).resolve()
+    if root not in path.parents:
+        raise ValueError("Invalid bundle path")
+    return path
+
+
+def new_bundle_id(thread_id: str) -> str:
+    stamp = datetime.now().astimezone().strftime("%Y%m%d-%H%M%S")
+    return cc.slugify(f"{thread_id}-{stamp}-{uuid.uuid4().hex[:8]}")
+
+
+def bundle_metadata(config: GatewayConfig, path: Path) -> JSONDict:
+    bundle_id = path.stem
+    metadata: JSONDict = {
+        "bundle_id": bundle_id,
+        "filename": path.name,
+        "size_bytes": path.stat().st_size if path.exists() else 0,
+        "sha256": cc.digest_file(path) if path.exists() else None,
+        "download_url": f"/api/capsules/bundles/{bundle_id}",
+        "created_at": datetime.fromtimestamp(path.stat().st_mtime).astimezone().isoformat(timespec="seconds")
+        if path.exists()
+        else None,
+    }
+    if path.exists():
+        with contextlib.suppress(Exception), zipfile.ZipFile(path, "r") as bundle:
+            manifest = json.loads(bundle.read("manifest.json").decode("utf-8"))
+            metadata.update(
+                {
+                    "thread_id": manifest.get("thread_id"),
+                    "export_mode": manifest.get("export_mode"),
+                    "includes_snapshots": manifest.get("includes_snapshots"),
+                    "redacted_transcript": manifest.get("redacted_transcript"),
+                }
+            )
+    return metadata
+
+
+def list_bundles(config: GatewayConfig) -> list[JSONDict]:
+    return [bundle_metadata(config, path) for path in sorted(bundles_dir(config).glob("*.scap"))]
+
+
+def export_bundle_api(config: GatewayConfig, payload: JSONDict) -> JSONDict:
+    thread_id = cc.slugify(str(payload["thread_id"]))
+    bundle_id = safe_bundle_id(str(payload.get("bundle_id") or new_bundle_id(thread_id)))
+    out_path = bundle_path(config, bundle_id)
+    args = argparse.Namespace(
+        state_dir=config.state_dir,
+        thread=thread_id,
+        out=out_path,
+        include_snapshots=bool(payload.get("include_snapshots", False)),
+        redact_transcript=bool(payload.get("redact_transcript", False)),
+        force=bool(payload.get("force", False)),
+    )
+    with config.lock:
+        cc.export_bundle(args)
+    metadata = bundle_metadata(config, out_path)
+    metadata["thread_id"] = thread_id
+    return metadata
+
+
+def import_bundle_file(config: GatewayConfig, path: Path, force: bool = False) -> JSONDict:
+    args = argparse.Namespace(
+        state_dir=config.state_dir,
+        bundle=path,
+        thread_id=None,
+        force=force,
+    )
+    with config.lock:
+        cc.import_bundle(args)
+    with zipfile.ZipFile(path, "r") as bundle:
+        manifest = json.loads(bundle.read("manifest.json").decode("utf-8"))
+    thread_id = manifest["thread_id"]
+    ledger = cc.Store(config.state_dir).load_ledger(thread_id)
+    return {
+        "thread_id": thread_id,
+        "active_capsule_id": ledger.get("active_capsule_id"),
+        "bundle_id": path.stem,
+        "fallback": ledger.get("fallback", {}),
+    }
+
+
+def import_bundle_api(config: GatewayConfig, handler: BaseHTTPRequestHandler) -> JSONDict:
+    content_type = handler.headers.get("Content-Type", "")
+    if "application/json" in content_type:
+        payload = read_body(handler)
+        bundle_id = str(payload["bundle_id"])
+        path = bundle_path(config, bundle_id)
+        if not path.exists():
+            raise FileNotFoundError(f"Bundle not found: {bundle_id}")
+        return import_bundle_file(config, path, bool(payload.get("force", False)))
+
+    body = read_raw_body(handler, config.max_bundle_bytes)
+    requested_id = handler.headers.get("X-Capsule-Bundle-Id")
+    bundle_id = safe_bundle_id(requested_id or f"upload-{datetime.now().astimezone().strftime('%Y%m%d-%H%M%S')}-{uuid.uuid4().hex[:8]}")
+    path = bundle_path(config, bundle_id)
+    if path.exists():
+        raise FileExistsError(f"Bundle already exists: {bundle_id}")
+    path.write_bytes(body)
+    try:
+        return import_bundle_file(config, path, handler.headers.get("X-Capsule-Import-Force", "").lower() in {"1", "true", "yes"})
+    except Exception:
+        with contextlib.suppress(FileNotFoundError):
+            path.unlink()
+        raise
 
 
 def endpoint_url(endpoint: JSONDict, path: str) -> str:
@@ -441,7 +582,8 @@ def make_handler(config: GatewayConfig) -> type[BaseHTTPRequestHandler]:
             return
 
         def do_GET(self) -> None:  # noqa: N802
-            if self.path == "/api/capsules/status":
+            parsed = urlparse(self.path)
+            if parsed.path == "/api/capsules/status":
                 endpoint = ensure_endpoint(config)
                 send_json(
                     self,
@@ -452,13 +594,35 @@ def make_handler(config: GatewayConfig) -> type[BaseHTTPRequestHandler]:
                         "endpoint_base_url": endpoint["base_url"],
                         "checkpoint_mode": config.checkpoint_mode,
                         "threads": len(thread_summaries(config)),
+                        "bundles": len(list_bundles(config)),
                     },
                 )
                 return
-            if self.path == "/api/capsules/threads":
+            if parsed.path == "/api/capsules/threads":
                 send_json(self, {"threads": thread_summaries(config)})
                 return
-            if self.path == "/v1/models":
+            if parsed.path == "/api/capsules/bundles":
+                send_json(self, {"bundles": list_bundles(config)})
+                return
+            if parsed.path.startswith("/api/capsules/bundles/"):
+                bundle_id = unquote(parsed.path.rsplit("/", 1)[-1])
+                path = bundle_path(config, bundle_id)
+                if not path.exists():
+                    send_json(self, {"error": {"message": "bundle not found"}}, status=404)
+                    return
+                send_bytes(
+                    self,
+                    path.read_bytes(),
+                    200,
+                    "application/vnd.session-capsule.scap",
+                    {
+                        "Content-Disposition": f'attachment; filename="{path.name}"',
+                        "X-Capsule-Bundle-Id": path.stem,
+                        "X-Capsule-Bundle-SHA256": cc.digest_file(path),
+                    },
+                )
+                return
+            if parsed.path == "/v1/models":
                 endpoint = ensure_endpoint(config)
                 try:
                     with request.urlopen(endpoint_url(endpoint, "/v1/models"), timeout=config.timeout) as response:
@@ -475,12 +639,35 @@ def make_handler(config: GatewayConfig) -> type[BaseHTTPRequestHandler]:
 
         def do_POST(self) -> None:  # noqa: N802
             try:
+                parsed = urlparse(self.path)
+                if parsed.path == "/api/capsules/import":
+                    send_json(self, import_bundle_api(config, self), headers={"X-Capsule-Import": "ok"})
+                    return
                 body = read_body(self)
-                if self.path == "/v1/chat/completions":
+                if parsed.path == "/v1/chat/completions":
                     handle_chat_completion(self, config, body)
                     return
-                if self.path == "/api/capsules/checkpoint":
+                if parsed.path == "/api/capsules/checkpoint":
                     send_json(self, checkpoint_from_api(config, body))
+                    return
+                if parsed.path == "/api/capsules/export":
+                    send_json(self, export_bundle_api(config, body), headers={"X-Capsule-Export": "ok"})
+                    return
+                send_json(self, {"error": {"message": "not found"}}, status=404)
+            except Exception as exc:  # noqa: BLE001 - gateway should return JSON errors.
+                send_json(self, {"error": {"message": str(exc), "type": "gateway_error"}}, status=500)
+
+        def do_DELETE(self) -> None:  # noqa: N802
+            try:
+                parsed = urlparse(self.path)
+                if parsed.path.startswith("/api/capsules/bundles/"):
+                    bundle_id = unquote(parsed.path.rsplit("/", 1)[-1])
+                    path = bundle_path(config, bundle_id)
+                    if not path.exists():
+                        send_json(self, {"deleted": False, "bundle_id": safe_bundle_id(bundle_id)}, status=404)
+                        return
+                    path.unlink()
+                    send_json(self, {"deleted": True, "bundle_id": path.stem})
                     return
                 send_json(self, {"error": {"message": "not found"}}, status=404)
             except Exception as exc:  # noqa: BLE001 - gateway should return JSON errors.
@@ -500,6 +687,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--timeout", type=float, default=120.0)
     parser.add_argument("--default-prefill")
     parser.add_argument("--default-thread-prefix", default="gateway")
+    parser.add_argument("--max-bundle-bytes", default="5GB", help="Maximum raw .scap upload accepted by /api/capsules/import.")
     return parser
 
 
@@ -520,6 +708,7 @@ def main() -> int:
         timeout=args.timeout,
         default_prefill=args.default_prefill,
         default_thread_prefix=args.default_thread_prefix,
+        max_bundle_bytes=cc.parse_bytes(args.max_bundle_bytes),
         lock=threading.Lock(),
     )
     # Fail fast if endpoint is not configured.

@@ -111,6 +111,7 @@ These should stay as launch-time values because they describe the current proces
 | `--slot` | `0` | Runtime slot used by this hard-mode process. |
 | `--default-prefill` | `user_default` | Optional launch default. |
 | `--timeout` | `120` | Network/runtime timeout for this launch. |
+| `--max-bundle-bytes` | `5GB` | Maximum raw `.scap` upload accepted by this gateway process. |
 
 ## Endpoint Records
 
@@ -140,6 +141,7 @@ There is enough configuration surface for a real help view now:
 - gateway launch flags
 - thread identity headers
 - prefill selection
+- gateway bundle transport
 - Model Plane job packets
 - storage stats, pinning, and GC
 

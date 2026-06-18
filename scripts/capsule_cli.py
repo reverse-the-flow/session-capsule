@@ -73,6 +73,7 @@ Core objects:
   capsule    checkpoint manifest, optionally pointing at a hard snapshot
   prefill    reusable root capsule for stable user/project context
   gateway    local OpenAI-compatible request-path layer
+  transport  gateway .scap upload/download API
 
 Start here:
   py -3 .\\scripts\\capsule_cli.py config init
@@ -83,6 +84,7 @@ Start here:
 More:
   capsule help config
   capsule help gateway
+  capsule help transport
   capsule help storage
   capsule help model-plane""",
     "config": """Persistent config lives under:
@@ -172,7 +174,29 @@ Client base URL:
 Optional headers:
   X-Capsule-Thread
   X-Capsule-Workspace
-  X-Capsule-Prefill""",
+  X-Capsule-Prefill
+
+For gateway upload/download endpoints:
+  capsule help transport""",
+    "transport": """Gateway transport lets a local UI or Model Plane move .scap bundles without reimplementing export/import.
+
+Endpoints:
+  POST   /api/capsules/export
+  GET    /api/capsules/bundles
+  GET    /api/capsules/bundles/{bundle_id}
+  POST   /api/capsules/import
+  DELETE /api/capsules/bundles/{bundle_id}
+
+Bundles are stored under:
+  .capsules/bundles/
+
+Export is ledger-only by default. Hard snapshots require include_snapshots=true.
+
+Raw upload content type:
+  application/vnd.session-capsule.scap
+
+Upload size limit:
+  py -3 .\\scripts\\capsule_gateway.py --state-dir .\\.capsules --endpoint local-llamacpp --max-bundle-bytes 5GB""",
     "storage": """Hard snapshots can be large. They are managed cache artifacts unless pinned.
 
 Defaults:
@@ -206,7 +230,10 @@ Include local hard snapshots only when intentionally moving same-runtime blobs:
 Import:
   py -3 .\\scripts\\capsule_cli.py import .\\research-loop.scap
 
-If snapshots are omitted, transcript replay remains the fallback.""",
+If snapshots are omitted, transcript replay remains the fallback.
+
+For gateway upload/download transport:
+  capsule help transport""",
     "model-plane": """Model Plane should supervise Session Capsules, not become the gateway.
 
 Model Plane owns:
@@ -252,6 +279,10 @@ Docker client cannot reach host gateway:
 
 def now_iso() -> str:
     return datetime.now().astimezone().isoformat(timespec="seconds")
+
+
+def timestamp_id() -> str:
+    return datetime.now().strftime("%Y%m%d-%H%M%S-%f")
 
 
 def slugify(value: str) -> str:
@@ -1140,7 +1171,7 @@ def checkpoint_soft(args: argparse.Namespace) -> int:
     endpoint = store.load_endpoint(ledger["endpoint_id"])
     rows = read_jsonl(store.transcript_path(args.thread))
     token_end = transcript_or_capsule_token_end(rows, ledger)
-    capsule_id = args.capsule_id or f"soft_{datetime.now().strftime('%Y%m%d-%H%M%S')}"
+    capsule_id = args.capsule_id or f"soft_{timestamp_id()}"
     manifest_ref = (Path("threads") / args.thread / "manifests" / f"{capsule_id}.json").as_posix()
     parent_capsule_id = ledger.get("active_capsule_id")
 
@@ -1270,7 +1301,7 @@ def create_hard_checkpoint(
 
     rows = read_jsonl(store.transcript_path(thread_id))
     token_end = transcript_or_capsule_token_end(rows, ledger)
-    capsule_id = capsule_id or f"cap_{datetime.now().strftime('%Y%m%d-%H%M%S')}"
+    capsule_id = capsule_id or f"cap_{timestamp_id()}"
     snapshot_path = store.snapshots_dir(thread_id) / f"{capsule_id}.bin"
     snapshot_path.parent.mkdir(parents=True, exist_ok=True)
     runtime_snapshot_ref = runtime_filename or str(snapshot_path.resolve())
@@ -1441,7 +1472,7 @@ def shutdown_thread(args: argparse.Namespace) -> int:
         store,
         args.thread,
         args.slot,
-        args.capsule_id or f"shutdown_{datetime.now().strftime('%Y%m%d-%H%M%S')}",
+        args.capsule_id or f"shutdown_{timestamp_id()}",
         args.timeout,
         args.runtime_filename,
     )
@@ -1699,11 +1730,7 @@ def hard_snapshot_records(store: Store, config: JSONDict) -> list[JSONDict]:
             hard_records.append(record)
             records.append(record)
 
-        protected_latest = sorted(
-            [item for item in hard_records if item["exists"]],
-            key=lambda item: (item["created_at"], item["capsule_id"]),
-            reverse=True,
-        )[:keep_latest]
+        protected_latest = [item for item in hard_records if item["exists"]][-keep_latest:] if keep_latest > 0 else []
         for record in protected_latest:
             record["latest_protected"] = True
             if not record["protected"]:

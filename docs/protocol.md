@@ -154,6 +154,18 @@ For thin client integrations, the gateway also recognizes common forwarded ident
 
 If a hard capsule is available, the gateway restores it into the configured slot and forwards only the transcript diff after the capsule token range. If no compatible hard capsule exists, it forwards a replay prompt and checkpoints after the response.
 
+The same gateway exposes `.scap` bundle transport for local UI and Model Plane integration:
+
+```text
+POST   /api/capsules/export
+GET    /api/capsules/bundles
+GET    /api/capsules/bundles/{bundle_id}
+POST   /api/capsules/import
+DELETE /api/capsules/bundles/{bundle_id}
+```
+
+Bundle transport moves portable thread artifacts. It still does not transport model weights, and hard snapshot blobs remain optional same-runtime artifacts.
+
 ## Model Plane Job Packets
 
 Model Plane coordination should use the same ledger, manifest, and endpoint records as the standalone harness.

@@ -11,6 +11,7 @@ Model Plane can own:
 - thread and capsule registry
 - job packets
 - routing and fallback policy
+- user-facing bundle upload/download policy
 
 Model Plane should not own:
 
@@ -61,6 +62,16 @@ Model Plane job packet
 ```
 
 This keeps the standalone CLI and gateway useful without Model Plane. It also lets Model Plane schedule capsule-aware work later without learning runtime-specific slot APIs.
+
+For UI-driven `.scap` transfer, Model Plane should call the gateway bundle endpoints instead of reimplementing the archive format:
+
+```text
+POST   /api/capsules/export
+GET    /api/capsules/bundles/{bundle_id}
+POST   /api/capsules/import
+```
+
+The gateway owns local export/import mechanics. Model Plane owns auth, UX, retention, and remote exposure.
 
 ## Fallback
 
