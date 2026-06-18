@@ -292,21 +292,25 @@ def bundle_metadata(config: GatewayConfig, path: Path) -> JSONDict:
         else None,
     }
     if path.exists():
-        with contextlib.suppress(Exception), zipfile.ZipFile(path, "r") as bundle:
-            manifest = json.loads(bundle.read("manifest.json").decode("utf-8"))
+        with contextlib.suppress(Exception):
+            report = cc.inspect_bundle_report(path)
+            integrity = report["integrity"]
+            content = report["content"]
+            policy = report["share_policy"]
             metadata.update(
                 {
-                    "thread_id": manifest.get("thread_id"),
-                    "export_mode": manifest.get("export_mode"),
-                    "includes_snapshots": manifest.get("includes_snapshots"),
-                    "redacted_transcript": manifest.get("redacted_transcript"),
-                    "signature_present": isinstance(manifest.get("integrity", {}).get("signature"), dict),
-                    "signature_algorithm": manifest.get("integrity", {}).get("signature", {}).get("algorithm")
-                    if isinstance(manifest.get("integrity", {}).get("signature"), dict)
-                    else None,
-                    "signature_key_id": manifest.get("integrity", {}).get("signature", {}).get("key_id")
-                    if isinstance(manifest.get("integrity", {}).get("signature"), dict)
-                    else None,
+                    "thread_id": report.get("thread_id"),
+                    "export_mode": report.get("export_mode"),
+                    "includes_snapshots": content.get("snapshots_included"),
+                    "redacted_transcript": report.get("redacted_transcript"),
+                    "transcript_included": content.get("transcript_included"),
+                    "prefill_sources_included": content.get("prefill_sources_included"),
+                    "signature_present": integrity.get("signature_present"),
+                    "signature_algorithm": integrity.get("signature_algorithm"),
+                    "signature_key_id": integrity.get("signature_key_id"),
+                    "encrypted": integrity.get("encrypted"),
+                    "share_safety": policy.get("classification"),
+                    "trusted_transport_required": policy.get("trusted_transport_required"),
                 }
             )
     return metadata

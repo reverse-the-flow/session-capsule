@@ -140,6 +140,14 @@ py -3 .\scripts\capsule_cli.py --state-dir .\.capsules job run .\examples\model-
 
 For `gateway_import_bundle`, `params.thread_id` is the target local thread id to import as. This lets Model Plane avoid clobbering an existing local thread when a user uploads or reimports a `.scap` bundle.
 
+Before enabling external share/import affordances, Model Plane should inspect the bundle posture. For local files, call:
+
+```powershell
+py -3 .\scripts\capsule_cli.py inspect --bundle .\research-loop.scap --json
+```
+
+For gateway-stored bundles, `GET /api/capsules/bundles` exposes the same classification as `share_safety` plus `trusted_transport_required`, plaintext-content flags, snapshot inclusion, signing, and encryption metadata. `metadata_only_not_encrypted` means transcript and prefill source text were omitted, but the bundle is still not sealed. `contains_plaintext_content` and `contains_unencrypted_snapshots` should stay behind trusted transport unless a later encryption envelope is present.
+
 ## Fallback
 
 Every job must be safe to degrade:

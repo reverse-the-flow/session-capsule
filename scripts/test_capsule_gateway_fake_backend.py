@@ -413,6 +413,16 @@ def main() -> None:
             bundle_list = get_json(f"{gateway_url}/api/capsules/bundles", auth_headers)
             if not any(item["bundle_id"] == "gateway-thread-test" for item in bundle_list["bundles"]):
                 raise AssertionError("exported bundle was not listed")
+            listed_bundle = next(item for item in bundle_list["bundles"] if item["bundle_id"] == "gateway-thread-test")
+            if listed_bundle.get("share_safety") != "contains_plaintext_content":
+                raise AssertionError("gateway bundle list did not expose share safety classification")
+            if listed_bundle.get("trusted_transport_required") is not True:
+                raise AssertionError("gateway bundle list did not expose trusted transport requirement")
+            if listed_bundle.get("signature_present") is not True:
+                raise AssertionError("gateway bundle list did not expose signature status")
+            redacted_listed_bundle = next(item for item in bundle_list["bundles"] if item["bundle_id"] == "gateway-thread-redacted")
+            if redacted_listed_bundle.get("share_safety") != "metadata_only_not_encrypted":
+                raise AssertionError("gateway bundle list did not classify redacted bundle")
 
             bundle_bytes, download_headers = get_bytes(
                 f"{gateway_url}/api/capsules/bundles/gateway-thread-test",

@@ -110,6 +110,8 @@ The digest index detects corrupted, swapped, extra, missing, or duplicate bundle
 
 Redacted exports are metadata-only bundles. They omit transcript and prefill source text, write `transcript_redacted=true` into the thread ledger, set fallback mode to `unavailable_redacted_transcript`, and set `prefill_source.source_redacted=true` when a prefill manifest is included without its source file. Redaction is not encryption; hard snapshots and metadata may still reveal sensitive state.
 
+`inspect --bundle BUNDLE.scap` derives a share/import classification from the bundle manifest and zip entries. Current classifications are `contains_plaintext_content`, `contains_unencrypted_snapshots`, `metadata_only_not_encrypted`, and future `encrypted`. Gateway bundle listings expose the same value as `share_safety` so launchers and UIs can gate upload/download affordances without parsing the archive format themselves.
+
 ## Reload Order
 
 Thread reload should happen in this order:

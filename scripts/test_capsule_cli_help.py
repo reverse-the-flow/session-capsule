@@ -82,6 +82,7 @@ def main() -> None:
         "optional HMAC-SHA256 bundle signatures" not in security
         or "keys are not written into .capsules state" not in security
         or "import warns on local endpoint metadata conflicts" not in security
+        or "inspect --bundle" not in security
     ):
         raise AssertionError("security help did not explain integrity boundary")
 

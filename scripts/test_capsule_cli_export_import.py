@@ -120,6 +120,19 @@ def main() -> None:
         verify_result = run_cli(source_state, "verify", str(bundle_path))
         if "verified: yes" not in verify_result.stdout:
             raise AssertionError("bundle verify command did not accept exported bundle")
+        inspect_result = run_cli(source_state, "inspect", "--bundle", str(bundle_path), "--json")
+        inspect_payload = json.loads(inspect_result.stdout)
+        if inspect_payload.get("share_policy", {}).get("classification") != "contains_plaintext_content":
+            raise AssertionError("bundle inspect did not classify transcript-bearing export as plaintext content")
+        if inspect_payload.get("share_policy", {}).get("trusted_transport_required") is not True:
+            raise AssertionError("bundle inspect did not require trusted transport for unencrypted bundle")
+        if inspect_payload.get("content", {}).get("transcript_included") is not True:
+            raise AssertionError("bundle inspect did not detect transcript content")
+        if inspect_payload.get("content", {}).get("prefill_sources_included") is not True:
+            raise AssertionError("bundle inspect did not detect prefill source content")
+        human_inspect = run_cli(source_state, "inspect", "--bundle", str(bundle_path))
+        if "classification: contains_plaintext_content" not in human_inspect.stdout:
+            raise AssertionError("human bundle inspect did not print share classification")
 
         run_cli(source_state, "export", "--thread", "export-thread", "--out", str(redacted_bundle_path), "--redact-transcript")
         with zipfile.ZipFile(redacted_bundle_path, "r") as bundle:
@@ -140,6 +153,13 @@ def main() -> None:
             prefill_source = redacted_prefill_manifest.get("prefill_source", {})
             if prefill_source.get("source_ref") is not None or prefill_source.get("source_redacted") is not True:
                 raise AssertionError("redacted prefill manifest did not mark omitted source")
+        redacted_inspect_payload = json.loads(run_cli(source_state, "inspect", "--bundle", str(redacted_bundle_path), "--json").stdout)
+        if redacted_inspect_payload.get("share_policy", {}).get("classification") != "metadata_only_not_encrypted":
+            raise AssertionError("bundle inspect did not classify redacted export as metadata-only")
+        if redacted_inspect_payload.get("content", {}).get("transcript_included") is not False:
+            raise AssertionError("bundle inspect did not detect redacted transcript omission")
+        if redacted_inspect_payload.get("content", {}).get("prefill_sources_included") is not False:
+            raise AssertionError("bundle inspect did not detect redacted prefill source omission")
         redacted_import = run_cli(redacted_import_state, "import", str(redacted_bundle_path))
         if "warning: transcript was redacted in this bundle" not in redacted_import.stdout:
             raise AssertionError("redacted import did not warn about missing transcript")
@@ -266,6 +286,11 @@ def main() -> None:
         )
         if "signature: verified" not in signed_verify.stdout:
             raise AssertionError("signed bundle did not verify with the expected key")
+        signed_inspect_payload = json.loads(run_cli(source_state, "inspect", "--bundle", str(signed_bundle_path), "--json").stdout)
+        if signed_inspect_payload.get("integrity", {}).get("signature_present") is not True:
+            raise AssertionError("bundle inspect did not detect signed bundle")
+        if signed_inspect_payload.get("integrity", {}).get("signature_key_id") != "test-key":
+            raise AssertionError("bundle inspect did not report signature key id")
         wrong_key_path = temp_path / "wrong-signature.key"
         wrong_key_path.write_text("wrong-key", encoding="utf-8")
         wrong_key_failure = run_cli_failure(

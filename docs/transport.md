@@ -268,6 +268,15 @@ Verify a bundle before upload or import:
 py -3 .\scripts\capsule_cli.py verify .\research-loop.scap
 ```
 
+Inspect share/import posture before exposing a bundle:
+
+```powershell
+py -3 .\scripts\capsule_cli.py inspect --bundle .\research-loop.scap
+py -3 .\scripts\capsule_cli.py inspect --bundle .\research-loop.scap --json
+```
+
+Inspection reports whether transcript or prefill source text is present in plaintext, whether hard snapshots are included, whether the bundle is redacted, signed, or encrypted, and whether trusted transport is required. Gateway bundle listings expose the same classification as `share_safety`.
+
 Verify a signed bundle with an explicit key:
 
 ```powershell

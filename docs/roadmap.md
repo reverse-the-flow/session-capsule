@@ -497,6 +497,8 @@ Initial status:
 - `capsule_cli.py job run EXPORT_JOB.json --signature-key-file KEY` signs direct Model Plane export jobs without storing the key in the packet.
 - `verify --signature-key-file KEY --require-signature` verifies the bundle signature.
 - `import --signature-key-file KEY --require-signature` verifies a required signature before extraction.
+- `inspect --bundle BUNDLE.scap` reports plaintext content, redaction, snapshots, signing, encryption status, and trusted-transport policy.
+- Gateway bundle listings expose `share_safety`, `trusted_transport_required`, `transcript_included`, `prefill_sources_included`, and signing/encryption metadata.
 - `capsule_gateway.py --signature-key-file KEY --require-bundle-signature` applies signing and required verification to gateway transport.
 - `import BUNDLE.scap` verifies bundles that include `file_digests` before extracting state files.
 - `scripts/test_capsule_cli_export_import.py` validates successful verification, signature checks, and tamper rejection.

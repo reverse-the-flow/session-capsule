@@ -329,6 +329,10 @@ Import warns when an incoming endpoint id already exists locally with different 
 Verify bundle integrity:
   py -3 .\\scripts\\capsule_cli.py verify .\\research-loop.scap
 
+Inspect bundle share/import posture:
+  py -3 .\\scripts\\capsule_cli.py inspect --bundle .\\research-loop.scap
+  py -3 .\\scripts\\capsule_cli.py inspect --bundle .\\research-loop.scap --json
+
 Sign with an explicit local key file:
   py -3 .\\scripts\\capsule_cli.py export --thread research-loop --out .\\research-loop.scap --signature-key-file .\\capsule-signing.key --signature-key-id local
 
@@ -348,6 +352,7 @@ For gateway upload/download transport:
 
 Commands:
   py -3 .\\scripts\\capsule_cli.py verify .\\research-loop.scap
+  py -3 .\\scripts\\capsule_cli.py inspect --bundle .\\research-loop.scap --json
   py -3 .\\scripts\\capsule_cli.py verify .\\research-loop.scap --signature-key-file .\\capsule-signing.key --require-signature
 
 Key handling:
@@ -2054,6 +2059,180 @@ def verify_bundle_integrity(
     }
 
 
+def bundle_entry_sizes(bundle: zipfile.ZipFile) -> tuple[dict[str, int], list[str], int]:
+    sizes: dict[str, int] = {}
+    duplicates: list[str] = []
+    total_uncompressed = 0
+    for item in bundle.infolist():
+        if item.is_dir():
+            continue
+        name = safe_zip_name(item.filename)
+        total_uncompressed += item.file_size
+        if name in sizes:
+            duplicates.append(name)
+        sizes[name] = sizes.get(name, 0) + item.file_size
+    return sizes, sorted(set(duplicates)), total_uncompressed
+
+
+def bundle_content_classification(
+    encrypted: bool,
+    transcript_bytes: int,
+    prefill_source_bytes: int,
+    snapshots_included: bool,
+) -> str:
+    if encrypted:
+        return "encrypted"
+    if transcript_bytes or prefill_source_bytes:
+        return "contains_plaintext_content"
+    if snapshots_included:
+        return "contains_unencrypted_snapshots"
+    return "metadata_only_not_encrypted"
+
+
+def bundle_share_policy(
+    classification: str,
+    signature_present: bool,
+    encrypted: bool,
+    has_plaintext_content: bool,
+    snapshots_included: bool,
+    redacted_transcript: bool,
+) -> JSONDict:
+    warnings: list[str] = []
+    recommendations: list[str] = []
+    if not encrypted:
+        warnings.append("Bundle is not encrypted; use trusted storage and transport.")
+        recommendations.append("Treat redaction as metadata reduction, not cryptographic sealing.")
+    if has_plaintext_content:
+        warnings.append("Transcript or prefill source text is present in plaintext.")
+        recommendations.append("Use export --redact-transcript before sharing outside a trusted boundary.")
+    if snapshots_included and not encrypted:
+        warnings.append("Hard snapshot blobs are present without encryption.")
+        recommendations.append("Omit snapshots unless the recipient has the same trusted runtime context.")
+    if redacted_transcript and not encrypted:
+        warnings.append("Redacted transcript bundles still expose metadata and are not sealed.")
+    if not signature_present:
+        warnings.append("Bundle is unsigned; authenticity is not cryptographically checked.")
+        recommendations.append("Use --signature-key-file for shared-key authenticity when transporting bundles.")
+    if encrypted:
+        recommendations.append("Verify the sealing key policy before importing.")
+    return {
+        "classification": classification,
+        "trusted_transport_required": not encrypted,
+        "warnings": warnings,
+        "recommendations": recommendations,
+    }
+
+
+def inspect_bundle_report(bundle_path: Path) -> JSONDict:
+    if not bundle_path.exists():
+        raise FileNotFoundError(f"Bundle not found: {bundle_path}")
+    with zipfile.ZipFile(bundle_path, "r") as bundle:
+        sizes, duplicates, total_uncompressed = bundle_entry_sizes(bundle)
+        if "manifest.json" not in sizes:
+            raise RuntimeError("Bundle manifest is missing")
+        manifest = json.loads(bundle.read("manifest.json").decode("utf-8"))
+        if not isinstance(manifest, dict):
+            raise RuntimeError("Bundle manifest must be a JSON object")
+
+    integrity = manifest.get("integrity", {})
+    if not isinstance(integrity, dict):
+        integrity = {}
+    signature = integrity.get("signature")
+    signature_present = isinstance(signature, dict)
+    encryption = integrity.get("encryption")
+    encrypted = isinstance(encryption, dict)
+
+    transcript_entries = sorted(name for name in sizes if name == "transcript.jsonl" or name.endswith("/transcript.jsonl"))
+    prefill_source_entries = sorted(
+        name for name in sizes if name.startswith("prefills/") and name.endswith("/source.md")
+    )
+    snapshot_entries = sorted(name for name in sizes if "/snapshots/" in name)
+    transcript_bytes = sum(sizes[name] for name in transcript_entries)
+    prefill_source_bytes = sum(sizes[name] for name in prefill_source_entries)
+    snapshot_bytes = sum(sizes[name] for name in snapshot_entries)
+    snapshots_included = bool(manifest.get("includes_snapshots")) or bool(snapshot_entries)
+    classification = bundle_content_classification(
+        encrypted,
+        transcript_bytes,
+        prefill_source_bytes,
+        snapshots_included,
+    )
+    redacted_transcript = bool(manifest.get("redacted_transcript"))
+    return {
+        "bundle": str(bundle_path),
+        "size_bytes": bundle_path.stat().st_size,
+        "sha256": digest_file(bundle_path),
+        "schema_version": manifest.get("schema_version"),
+        "bundle_type": manifest.get("bundle_type"),
+        "created_at": manifest.get("created_at"),
+        "thread_id": manifest.get("thread_id"),
+        "export_mode": manifest.get("export_mode"),
+        "redacted_transcript": redacted_transcript,
+        "redaction": manifest.get("redaction", {}),
+        "entries": {
+            "count": len(sizes),
+            "total_uncompressed_bytes": total_uncompressed,
+            "duplicate_entries": duplicates,
+        },
+        "content": {
+            "transcript_entries": transcript_entries,
+            "transcript_bytes": transcript_bytes,
+            "transcript_included": transcript_bytes > 0,
+            "prefill_source_entries": prefill_source_entries,
+            "prefill_source_bytes": prefill_source_bytes,
+            "prefill_sources_included": prefill_source_bytes > 0,
+            "snapshot_entries": snapshot_entries,
+            "snapshot_bytes": snapshot_bytes,
+            "snapshots_included": snapshots_included,
+            "omitted_snapshots": manifest.get("omitted_snapshots", []),
+        },
+        "integrity": {
+            "file_digest_index_present": isinstance(manifest.get("file_digests"), dict),
+            "file_digest_algorithm": integrity.get("file_digest_algorithm"),
+            "signature_present": signature_present,
+            "signature_algorithm": signature.get("algorithm") if signature_present else None,
+            "signature_key_id": signature.get("key_id") if signature_present else None,
+            "encrypted": encrypted,
+            "encryption": encryption,
+        },
+        "share_policy": bundle_share_policy(
+            classification,
+            signature_present,
+            encrypted,
+            transcript_bytes > 0 or prefill_source_bytes > 0,
+            snapshots_included,
+            redacted_transcript,
+        ),
+    }
+
+
+def print_bundle_report(report: JSONDict) -> None:
+    content = report["content"]
+    integrity = report["integrity"]
+    policy = report["share_policy"]
+    print(f"bundle: {report['bundle']}")
+    print(f"thread: {report.get('thread_id')}")
+    print(f"size: {format_bytes(int(report['size_bytes']))}")
+    print(f"sha256: {report['sha256']}")
+    print(f"classification: {policy['classification']}")
+    print(f"trusted transport required: {'yes' if policy['trusted_transport_required'] else 'no'}")
+    print(f"transcript content: {'yes' if content['transcript_included'] else 'no'}")
+    print(f"prefill source content: {'yes' if content['prefill_sources_included'] else 'no'}")
+    print(f"snapshots included: {'yes' if content['snapshots_included'] else 'no'}")
+    print(f"redacted transcript: {'yes' if report['redacted_transcript'] else 'no'}")
+    print(f"signature: {'present' if integrity['signature_present'] else 'absent'}")
+    if integrity.get("signature_key_id"):
+        print(f"signature key id: {integrity['signature_key_id']}")
+    print(f"encrypted: {'yes' if integrity['encrypted'] else 'no'}")
+    duplicates = report.get("entries", {}).get("duplicate_entries", [])
+    if duplicates:
+        print(f"duplicate entries: {len(duplicates)}")
+    for warning in policy.get("warnings", []):
+        print(f"warning: {warning}")
+    for recommendation in policy.get("recommendations", []):
+        print(f"recommendation: {recommendation}")
+
+
 def bundle_json(bundle: zipfile.ZipFile, name: str) -> JSONDict:
     data = json.loads(bundle.read(name).decode("utf-8"))
     if not isinstance(data, dict):
@@ -3426,6 +3605,16 @@ def run_job_packet(args: argparse.Namespace) -> int:
 
 def inspect(args: argparse.Namespace) -> int:
     store = Store(args.state_dir)
+    if args.thread and args.bundle:
+        raise RuntimeError("Choose only one inspection target: --thread or --bundle")
+    if args.bundle:
+        report = inspect_bundle_report(args.bundle.resolve())
+        if args.json:
+            print(json.dumps(report, indent=2))
+        else:
+            print_bundle_report(report)
+        return 0
+
     if args.thread:
         ledger = store.load_ledger(args.thread)
         rows = read_jsonl(store.transcript_path(args.thread))
@@ -3731,6 +3920,8 @@ def build_parser() -> argparse.ArgumentParser:
 
     inspect_cmd = subcommands.add_parser("inspect")
     inspect_cmd.add_argument("--thread")
+    inspect_cmd.add_argument("--bundle", type=Path)
+    inspect_cmd.add_argument("--json", action="store_true")
     inspect_cmd.set_defaults(func=inspect)
 
     return parser

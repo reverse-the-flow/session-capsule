@@ -247,6 +247,15 @@ Verify a bundle:
 py -3 .\scripts\capsule_cli.py verify .\research-loop.scap
 ```
 
+Inspect bundle share/import posture:
+
+```powershell
+py -3 .\scripts\capsule_cli.py inspect --bundle .\research-loop.scap
+py -3 .\scripts\capsule_cli.py inspect --bundle .\research-loop.scap --json
+```
+
+Inspection reports plaintext transcript or prefill source content, hard snapshot inclusion, redaction status, signing, encryption status, and whether trusted transport is required.
+
 Sign and verify with an explicit local key file:
 
 ```powershell
@@ -280,6 +289,7 @@ Current boundary:
 - Model Plane export jobs can sign with runner-side `job run --signature-key-file` or `job run --signature-key-env`
 - gateway request auth is controlled by `--auth-token-file` or `--auth-token-env`
 - gateway transport jobs authenticate with `job run --gateway-auth-token-file` or `job run --gateway-auth-token-env`
+- bundle inspection classifies transported bundles for share/import policy before upload or import
 - not implemented yet: encryption or sealed user-carried blobs
 
 Redaction is not encryption. It removes transcript and prefill source text, but metadata, digests, token ranges, endpoint ids, and included hard snapshots may still be sensitive.
