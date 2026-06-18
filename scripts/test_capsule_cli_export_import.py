@@ -7,6 +7,7 @@ import json
 import subprocess
 import sys
 import tempfile
+import warnings
 import zipfile
 from pathlib import Path
 
@@ -28,6 +29,20 @@ def run_cli(state_dir: Path, *args: str) -> subprocess.CompletedProcess[str]:
         raise AssertionError(
             f"CLI failed: {' '.join(command)}\nSTDOUT:\n{result.stdout}\nSTDERR:\n{result.stderr}"
         )
+    return result
+
+
+def run_cli_failure(state_dir: Path, *args: str) -> subprocess.CompletedProcess[str]:
+    command = [sys.executable, str(CLI), "--state-dir", str(state_dir), *args]
+    result = subprocess.run(
+        command,
+        cwd=ROOT,
+        check=False,
+        text=True,
+        capture_output=True,
+    )
+    if result.returncode == 0:
+        raise AssertionError(f"CLI unexpectedly succeeded: {' '.join(command)}\nSTDOUT:\n{result.stdout}")
     return result
 
 
@@ -83,6 +98,15 @@ def main() -> None:
             manifest = json.loads(bundle.read("manifest.json").decode("utf-8"))
             if manifest["includes_snapshots"]:
                 raise AssertionError("ledger-only export unexpectedly included snapshots")
+            file_digests = manifest.get("file_digests", {})
+            if "thread-ledger.json" not in file_digests:
+                raise AssertionError("bundle manifest did not include file digest index")
+            if manifest.get("integrity", {}).get("file_digest_algorithm") != "sha256":
+                raise AssertionError("bundle manifest did not record sha256 integrity metadata")
+
+        verify_result = run_cli(source_state, "verify", str(bundle_path))
+        if "verified: yes" not in verify_result.stdout:
+            raise AssertionError("bundle verify command did not accept exported bundle")
 
         run_cli(imported_state, "import", str(bundle_path))
         imported_ledger = imported_state / "threads" / "export-thread" / "thread-ledger.json"
@@ -95,6 +119,30 @@ def main() -> None:
         if ledger["active_capsule_id"] is None:
             raise AssertionError("imported ledger did not preserve active capsule")
         run_cli(imported_state, "inspect", "--thread", "export-thread")
+
+        tampered_bundle = temp_path / "tampered.scap"
+        tampered_bundle.write_bytes(bundle_path.read_bytes())
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", UserWarning)
+            with zipfile.ZipFile(tampered_bundle, "a", compression=zipfile.ZIP_DEFLATED) as bundle:
+                bundle.writestr("thread-ledger.json", "{}\n")
+        verify_failure = run_cli_failure(source_state, "verify", str(tampered_bundle))
+        if "Duplicate bundle entry" not in verify_failure.stderr:
+            raise AssertionError("tampered bundle did not fail duplicate-entry verification")
+        import_failure = run_cli_failure(imported_state, "import", str(tampered_bundle), "--force")
+        if "Duplicate bundle entry" not in import_failure.stderr:
+            raise AssertionError("tampered bundle import did not fail integrity verification")
+
+        mismatched_bundle = temp_path / "mismatched.scap"
+        with zipfile.ZipFile(bundle_path, "r") as source, zipfile.ZipFile(mismatched_bundle, "w", compression=zipfile.ZIP_DEFLATED) as target:
+            for item in source.infolist():
+                payload = source.read(item.filename)
+                if item.filename == "thread-ledger.json":
+                    payload = b"{}\n"
+                target.writestr(item, payload)
+        mismatch_failure = run_cli_failure(source_state, "verify", str(mismatched_bundle))
+        if "mismatched" not in mismatch_failure.stderr:
+            raise AssertionError("mismatched bundle did not fail digest verification")
 
     print(".scap export/import smoke test ok")
 

@@ -56,6 +56,8 @@ Response shape:
 
 Export defaults to ledger-only. Set `include_snapshots=true` only when intentionally moving same-runtime hard snapshot blobs.
 
+Every new export includes `file_digests` in `manifest.json`. The digest index covers every zip entry except `manifest.json`.
+
 ## List And Download
 
 List local bundles:
@@ -106,6 +108,18 @@ Invoke-RestMethod `
 
 Use `X-Capsule-Import-Force: true` only when intentionally replacing an existing local thread.
 
+Imports verify bundles that include `file_digests`. Digest mismatch or duplicate zip entries fail before extraction.
+
+## Verify
+
+Verify a bundle before upload or import:
+
+```powershell
+py -3 .\scripts\capsule_cli.py verify .\research-loop.scap
+```
+
+This proves archive integrity for the exported files. It does not prove who created the bundle.
+
 ## Delete
 
 Delete a stored local bundle after transfer:
@@ -139,6 +153,23 @@ Model Plane owns:
 - deciding when a bundle should be exported, imported, pinned, or deleted
 
 This keeps the transport layer standalone while making Model Plane integration practical.
+
+## Security Boundary
+
+Implemented now:
+
+- per-entry SHA-256 file digests in bundle `manifest.json`
+- `capsule verify BUNDLE.scap`
+- import-time digest verification for bundles that carry `file_digests`
+- duplicate zip-entry rejection
+
+Not implemented yet:
+
+- cryptographic signatures
+- encryption
+- sealed user-carried blobs
+
+Those later envelope features should build on the digest index instead of replacing it.
 
 ## Model Plane Job Packets
 

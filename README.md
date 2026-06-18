@@ -161,10 +161,11 @@ Export and import a thread bundle:
 
 ```powershell
 py -3 .\scripts\capsule_cli.py export --thread research-loop-small --out .\research-loop-small.scap
+py -3 .\scripts\capsule_cli.py verify .\research-loop-small.scap
 py -3 .\scripts\capsule_cli.py import .\research-loop-small.scap
 ```
 
-By default, `.scap` export is ledger-only: it includes endpoint metadata, thread ledger, transcript, capsule manifests, and prefill sources, but omits hard snapshot blobs. Add `--include-snapshots` only when intentionally moving same-runtime local snapshot files.
+By default, `.scap` export is ledger-only: it includes endpoint metadata, thread ledger, transcript, capsule manifests, prefill sources, and per-entry file digests, but omits hard snapshot blobs. Add `--include-snapshots` only when intentionally moving same-runtime local snapshot files.
 
 Inspect and clean local hard capsule storage:
 

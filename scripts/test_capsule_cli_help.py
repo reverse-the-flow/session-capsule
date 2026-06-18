@@ -29,7 +29,7 @@ def run_cli(*args: str) -> str:
 
 def main() -> None:
     topics = run_cli("help", "--topics")
-    for expected in ["overview", "config", "gateway", "transport", "storage", "model-plane", "troubleshooting"]:
+    for expected in ["overview", "config", "gateway", "transport", "storage", "security", "model-plane", "troubleshooting"]:
         if expected not in topics:
             raise AssertionError(f"help topic missing: {expected}")
 
@@ -52,6 +52,10 @@ def main() -> None:
     model_plane = run_cli("help", "model-plane")
     if "gateway_export_bundle" not in model_plane:
         raise AssertionError("model-plane help did not include gateway transport job types")
+
+    security = run_cli("help", "security")
+    if "Signing and encryption are future envelope layers" not in security:
+        raise AssertionError("security help did not explain integrity boundary")
 
     print("CLI conceptual help smoke test ok")
 

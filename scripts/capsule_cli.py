@@ -75,6 +75,7 @@ Core objects:
   prefill    reusable root capsule for stable user/project context
   gateway    local OpenAI-compatible request-path layer
   transport  gateway .scap upload/download API
+  security   bundle integrity now, signing/encryption later
 
 Start here:
   py -3 .\\scripts\\capsule_cli.py config init
@@ -86,6 +87,7 @@ More:
   capsule help config
   capsule help gateway
   capsule help transport
+  capsule help security
   capsule help storage
   capsule help model-plane""",
     "config": """Persistent config lives under:
@@ -231,10 +233,24 @@ Include local hard snapshots only when intentionally moving same-runtime blobs:
 Import:
   py -3 .\\scripts\\capsule_cli.py import .\\research-loop.scap
 
+Verify bundle integrity:
+  py -3 .\\scripts\\capsule_cli.py verify .\\research-loop.scap
+
 If snapshots are omitted, transcript replay remains the fallback.
 
 For gateway upload/download transport:
   capsule help transport""",
+    "security": """Security status:
+  implemented: per-entry sha256 file_digests in exported .scap bundles
+  implemented: capsule verify rejects duplicate or digest-mismatched bundle entries
+  implemented: import verifies bundles that include file_digests
+  not implemented yet: cryptographic signing
+  not implemented yet: encryption or sealed user-carried blobs
+
+Commands:
+  py -3 .\\scripts\\capsule_cli.py verify .\\research-loop.scap
+
+The digest index is an integrity check, not an authenticity proof. Signing and encryption are future envelope layers.""",
     "model-plane": """Model Plane should supervise Session Capsules, not become the gateway.
 
 Model Plane owns:
@@ -300,6 +316,10 @@ def slugify(value: str) -> str:
 
 def digest_text(value: str) -> str:
     return "sha256:" + hashlib.sha256(value.encode("utf-8")).hexdigest()
+
+
+def digest_bytes(value: bytes) -> str:
+    return "sha256:" + hashlib.sha256(value).hexdigest()
 
 
 def digest_file(path: Path) -> str:
@@ -1506,6 +1526,58 @@ def add_file_to_zip(bundle: zipfile.ZipFile, source: Path, arcname: str) -> bool
     return True
 
 
+def zip_payload_digests(bundle: zipfile.ZipFile) -> dict[str, str]:
+    digests: dict[str, str] = {}
+    seen: set[str] = set()
+    for item in bundle.infolist():
+        name = safe_zip_name(item.filename)
+        if name in seen:
+            raise RuntimeError(f"Duplicate bundle entry: {name}")
+        seen.add(name)
+        if name == "manifest.json":
+            continue
+        digests[name] = digest_bytes(bundle.read(item.filename))
+    return dict(sorted(digests.items()))
+
+
+def bundle_file_digests(bundle_path: Path) -> dict[str, str]:
+    with zipfile.ZipFile(bundle_path, "r") as bundle:
+        return zip_payload_digests(bundle)
+
+
+def verify_bundle_integrity(bundle_path: Path) -> JSONDict:
+    if not bundle_path.exists():
+        raise FileNotFoundError(f"Bundle not found: {bundle_path}")
+    with zipfile.ZipFile(bundle_path, "r") as bundle:
+        manifest = json.loads(bundle.read("manifest.json").decode("utf-8"))
+        actual = zip_payload_digests(bundle)
+    expected = manifest.get("file_digests")
+    if expected is None:
+        return {
+            "verified": False,
+            "reason": "bundle has no file_digests index",
+            "thread_id": manifest.get("thread_id"),
+            "entries": len(actual),
+        }
+    if not isinstance(expected, dict):
+        raise RuntimeError("Bundle manifest file_digests must be an object")
+    expected_map = {safe_zip_name(str(key)): str(value) for key, value in expected.items()}
+    missing = sorted(set(expected_map) - set(actual))
+    extra = sorted(set(actual) - set(expected_map))
+    mismatched = sorted(name for name in expected_map if name in actual and expected_map[name] != actual[name])
+    if missing or extra or mismatched:
+        raise RuntimeError(
+            "Bundle digest verification failed: "
+            f"missing={missing}, extra={extra}, mismatched={mismatched}"
+        )
+    return {
+        "verified": True,
+        "thread_id": manifest.get("thread_id"),
+        "entries": len(actual),
+        "algorithm": "sha256",
+    }
+
+
 def export_bundle(args: argparse.Namespace) -> int:
     store = Store(args.state_dir)
     ledger = store.load_ledger(args.thread)
@@ -1593,6 +1665,16 @@ def export_bundle(args: argparse.Namespace) -> int:
 
     bundle_manifest["included_files"] = sorted(set(included_files))
     bundle_manifest["omitted_snapshots"] = sorted(set(omitted_snapshots))
+    bundle_manifest["integrity"] = {
+        "file_digest_algorithm": "sha256",
+        "signature": None,
+        "encryption": None,
+        "notes": [
+            "file_digests cover every zip entry except manifest.json.",
+            "Signatures and encryption are not implemented in this local bundle format yet.",
+        ],
+    }
+    bundle_manifest["file_digests"] = bundle_file_digests(out_path)
     with zipfile.ZipFile(out_path, "a", compression=zipfile.ZIP_DEFLATED) as bundle:
         add_text_to_zip(bundle, "manifest.json", json.dumps(bundle_manifest, indent=2) + "\n")
 
@@ -1609,6 +1691,10 @@ def import_bundle(args: argparse.Namespace) -> int:
     bundle_path = args.bundle.resolve()
     if not bundle_path.exists():
         raise FileNotFoundError(f"Bundle not found: {bundle_path}")
+
+    integrity = verify_bundle_integrity(bundle_path)
+    if not integrity["verified"]:
+        print(f"warning: {integrity['reason']}")
 
     with zipfile.ZipFile(bundle_path, "r") as bundle:
         bundle_manifest = json.loads(bundle.read("manifest.json").decode("utf-8"))
@@ -1640,6 +1726,20 @@ def import_bundle(args: argparse.Namespace) -> int:
     if bundle_manifest.get("redacted_transcript"):
         print("warning: transcript was redacted in this bundle")
     return 0
+
+
+def verify_bundle(args: argparse.Namespace) -> int:
+    bundle_path = args.bundle.resolve()
+    result = verify_bundle_integrity(bundle_path)
+    print(f"bundle: {bundle_path}")
+    print(f"thread: {result.get('thread_id')}")
+    print(f"verified: {'yes' if result['verified'] else 'no'}")
+    print(f"entries: {result.get('entries')}")
+    if result.get("algorithm"):
+        print(f"algorithm: {result['algorithm']}")
+    if result.get("reason"):
+        print(f"reason: {result['reason']}")
+    return 0 if result["verified"] else 1
 
 
 def config_init(args: argparse.Namespace) -> int:
@@ -2322,6 +2422,10 @@ def build_parser() -> argparse.ArgumentParser:
     import_cmd.add_argument("--thread-id")
     import_cmd.add_argument("--force", action="store_true")
     import_cmd.set_defaults(func=import_bundle)
+
+    verify_cmd = subcommands.add_parser("verify")
+    verify_cmd.add_argument("bundle", type=Path)
+    verify_cmd.set_defaults(func=verify_bundle)
 
     job = subcommands.add_parser("job")
     job_sub = job.add_subparsers(dest="job_command", required=True)

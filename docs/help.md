@@ -11,6 +11,7 @@ capsule    = checkpoint manifest, optionally with a hard snapshot
 prefill    = reusable root context
 gateway    = local OpenAI-compatible request-path layer
 transport  = gateway API for .scap upload/download
+security   = bundle integrity now, signing/encryption later
 config     = persistent policy for capsule state
 ```
 
@@ -63,6 +64,7 @@ The CLI help topics are:
 - `transport`
 - `storage`
 - `bundles`
+- `security`
 - `model-plane`
 - `troubleshooting`
 
@@ -169,6 +171,24 @@ Raw uploads are capped by the gateway launch flag:
 ```powershell
 py -3 .\scripts\capsule_gateway.py --state-dir .\.capsules --endpoint local-llamacpp --max-bundle-bytes 5GB
 ```
+
+## Security
+
+Exported `.scap` bundles include per-entry SHA-256 digests in `manifest.json`.
+
+Verify a bundle:
+
+```powershell
+py -3 .\scripts\capsule_cli.py verify .\research-loop.scap
+```
+
+Import verifies bundles that include `file_digests` and rejects duplicate or digest-mismatched entries.
+
+Current boundary:
+
+- implemented: digest-based integrity checks
+- not implemented yet: cryptographic signing
+- not implemented yet: encryption or sealed user-carried blobs
 
 ## Model Plane
 

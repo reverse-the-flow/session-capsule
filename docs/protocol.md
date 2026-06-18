@@ -60,6 +60,17 @@ The capsule manifest describes one checkpoint. It tracks:
 
 The manifest answers: can this endpoint restore this checkpoint?
 
+### Bundle Integrity
+
+A `.scap` bundle has its own top-level `manifest.json`. New exports include:
+
+- `integrity.file_digest_algorithm = sha256`
+- `file_digests`, covering every zip entry except `manifest.json`
+- `integrity.signature = null`
+- `integrity.encryption = null`
+
+The digest index detects corrupted, swapped, extra, missing, or duplicate bundle entries. It is not a signature and does not prove who created the bundle.
+
 ## Reload Order
 
 Thread reload should happen in this order:

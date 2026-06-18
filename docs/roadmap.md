@@ -372,6 +372,7 @@ Recommended order:
 9. Stage 8: Model Plane
 10. Stage 9: capsule storage management
 11. Stage 10: gateway bundle transport
+12. Stage 11: bundle integrity, signing, and sealing
 
 Do not start with gateway or Model Plane. They become simpler after the ledger, manifest, and CLI lifecycle are real.
 
@@ -435,6 +436,36 @@ Initial status:
 - The gateway launch flag `--max-bundle-bytes` caps raw upload size.
 - `scripts/test_capsule_gateway_fake_backend.py` validates export, list, download, raw upload import, and delete through the gateway.
 - Model Plane job packets can now invoke the gateway transport endpoints through `capsule_cli.py job run`.
+
+## Stage 11: Bundle Integrity, Signing, And Sealing
+
+Goal: Make transported bundles verifiable now, then add authenticity and confidentiality without blocking the local MVP.
+
+Implementation steps:
+
+- Add per-entry digest metadata to `.scap` bundle manifests.
+- Add a CLI verification command for bundle integrity.
+- Verify digest-indexed bundles before import extraction.
+- Reject duplicate zip entries.
+- Keep digest verification separate from cryptographic signing.
+- Add a later signature envelope for authenticity.
+- Add a later encryption or sealed-blob envelope for user-carried capsules.
+- Keep model weights outside the capsule envelope.
+
+Exit criteria:
+
+- A user can verify that a `.scap` bundle's entries match the exported manifest.
+- Import fails before extraction if a digest-indexed bundle is corrupted or contains duplicate entries.
+- The roadmap clearly distinguishes implemented integrity from future signing and encryption.
+
+Initial status:
+
+- New `.scap` exports include `integrity.file_digest_algorithm = sha256`.
+- New `.scap` exports include `file_digests` for every zip entry except `manifest.json`.
+- `capsule_cli.py verify BUNDLE.scap` verifies the file digest index.
+- `import BUNDLE.scap` verifies bundles that include `file_digests` before extracting state files.
+- `scripts/test_capsule_cli_export_import.py` validates successful verification and tamper rejection.
+- Cryptographic signatures, encryption, and sealed user-carried blobs are not implemented yet.
 
 ## First Three Implementation Tickets
 
