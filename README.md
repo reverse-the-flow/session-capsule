@@ -50,6 +50,7 @@ That matters most for:
 - [docs/transport.md](/X:/Experiments/session-capsules/docs/transport.md) - gateway `.scap` upload/download API for Model Plane and local UI integration
 - [docs/sealing.md](/X:/Experiments/session-capsules/docs/sealing.md) - sealed bundle transport, age-compatible backend, and key-reference policy
 - [docs/integrations.md](/X:/Experiments/session-capsules/docs/integrations.md) - thin Open WebUI and opencode integration guidance for the local gateway
+- [docs/opencode-native-hook.md](/X:/Experiments/session-capsules/docs/opencode-native-hook.md) - why generated opencode provider configs remain the supported path until a provider-request header hook exists
 - [docs/model-plane.md](/X:/Experiments/session-capsules/docs/model-plane.md) - Model Plane boundary and job-packet contract
 - [docs/verification.md](/X:/Experiments/session-capsules/docs/verification.md) - smoke-test command and verification boundary
 - [docs/source-review.md](/X:/Experiments/session-capsules/docs/source-review.md) - distilled requirements from the original local Capsule Resume notes

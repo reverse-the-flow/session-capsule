@@ -151,7 +151,15 @@ The core provider shape is:
 }
 ```
 
-The generated config is the CLI-first path when no native opencode hook is available. It avoids relying on hand-set `CAPSULE_THREAD`, `CAPSULE_WORKSPACE`, and `CAPSULE_PREFILL` values by writing those headers directly into the provider config for the selected workspace and session.
+The generated config is the CLI-first path when no native opencode provider-request hook is available. It avoids relying on hand-set `CAPSULE_THREAD`, `CAPSULE_WORKSPACE`, and `CAPSULE_PREFILL` values by writing those headers directly into the provider config for the selected workspace and session.
+
+Current native-hook decision:
+
+```text
+docs/opencode-native-hook.md
+```
+
+As of the current OpenCode docs reviewed on 2026-06-18, custom provider `options.headers` are the supported request-path mechanism. Plugins expose session events and shell environment hooks, but no documented provider-request/header mutation hook. A native replacement should wait for a hook that can compute headers per active session before each model call.
 
 On Windows, a minimal launcher example is:
 

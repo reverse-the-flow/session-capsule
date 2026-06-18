@@ -16,6 +16,7 @@ It performs:
 - Model Plane gateway launch-profile schema/example validation
 - conceptual CLI help smoke test
 - opencode integration config generation smoke test
+- opencode native-hook boundary documentation check
 - state-location help and `state info` smoke test
 - fake `llama.cpp` endpoint doctor slot probe, runtime metadata probe, endpoint compatibility matrix, hard capsule save/restore, shutdown job, and failed-restore fallback smoke test
 - state-relative ledger, prefill, and hard snapshot reference smoke test
@@ -64,6 +65,7 @@ The gateway integration contract is verified by fake-backend tests that exercise
 - endpoint compatibility status discovery for Model Plane hard checkpoint gating
 - gateway CORS preflight and exposed download headers for browser-hosted upload/download controls
 - identity status discovery for Open WebUI and opencode thread metadata
+- opencode generated-provider fallback while native provider-request hooks are unavailable
 - state-relative ledger, prefill, and snapshot refs in runtime-written files
 - `.scap` export, list, download, store-only upload, raw upload import, and bundle delete
 - gateway redacted bundle export

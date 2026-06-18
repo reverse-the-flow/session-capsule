@@ -323,6 +323,7 @@ Initial status:
 - The gateway maps `X-OpenWebUI-Chat-Id` and `X-OpenWebUI-User-Id` into thread/workspace metadata.
 - The gateway also accepts `X-Opencode-Thread`, `X-Opencode-Session`, and `X-Opencode-Workspace` for future native opencode hooks.
 - `capsule_cli.py integration opencode-config` renders an opencode provider config with concrete workspace, thread, and prefill headers while keeping the gateway token as an environment reference.
+- `docs/opencode-native-hook.md` records the current native-hook decision: generated provider configs remain the supported path until OpenCode exposes a provider-request/header hook or session-aware provider header template.
 
 ## Stage 8: Model Plane Integration
 
@@ -662,6 +663,7 @@ Initial status:
 - Open WebUI needs `X-OpenWebUI-Chat-Id`; `X-OpenWebUI-User-Id` is optional workspace metadata.
 - opencode needs `X-Opencode-Thread` or `X-Opencode-Session`; `X-Opencode-Workspace` is optional workspace metadata.
 - `integration opencode-config` can write concrete `X-Capsule-*` headers for CLI-first opencode launches when native session hooks are not available.
+- `docs/opencode-native-hook.md` defines the future native hook requirements and explains why current documented plugin session events do not replace provider request headers.
 - `scripts/test_capsule_gateway_fake_backend.py` verifies identity contract discovery and hard endpoint readiness discovery.
 - `docs/integrations.md`, `docs/protocol.md`, and `docs/transport.md` document the contract.
 
@@ -725,4 +727,4 @@ Initial status:
 
 ## Open Questions
 
-- Which native opencode hook can replace generated provider configs once opencode exposes stable per-session metadata?
+None currently tracked for the standalone v0 roadmap.

@@ -280,6 +280,9 @@ Generate an opencode provider config with concrete capsule headers:
 The generated opencode config keeps the gateway token as an environment reference:
   {env:CAPSULE_GATEWAY_TOKEN}
 
+Native opencode hook boundary:
+  generated provider configs remain the supported path until opencode exposes a provider-request/header hook or session-aware provider header template
+
 Open WebUI can use the gateway as an OpenAI-compatible API base URL and should forward chat/user headers when available.
 
 More:

@@ -78,6 +78,8 @@ def main() -> None:
     integrations = run_cli("help", "integrations")
     if "opencode-config" not in integrations or "X-Capsule-Thread" not in integrations:
         raise AssertionError("integrations help did not include opencode config generation")
+    if "provider-request/header hook" not in integrations:
+        raise AssertionError("integrations help did not include opencode native-hook boundary")
 
     with tempfile.TemporaryDirectory(prefix="session-capsules-opencode-") as temp:
         temp_path = Path(temp)

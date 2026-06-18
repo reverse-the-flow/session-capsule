@@ -572,6 +572,21 @@ def validate_gateway_launch_profile(path: Path) -> None:
             )
 
 
+def validate_opencode_native_hook_doc() -> None:
+    path = ROOT / "docs" / "opencode-native-hook.md"
+    text = path.read_text(encoding="utf-8")
+    required = [
+        "custom provider",
+        "options.headers",
+        "provider-request/header hook",
+        "session-aware provider header template",
+        "generated config remains the supported path",
+    ]
+    missing = [phrase for phrase in required if phrase not in text]
+    if missing:
+        raise ValidationError(f"opencode native hook doc missing required decision text: {', '.join(missing)}")
+
+
 def main() -> None:
     validate_schema_files()
 
@@ -597,6 +612,7 @@ def main() -> None:
             validate_gateway_launch_profile(path)
         else:
             validate_model_plane_job(path)
+    validate_opencode_native_hook_doc()
 
     print("schema examples ok")
 
