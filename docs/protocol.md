@@ -108,6 +108,8 @@ A `.scap` bundle has its own top-level `manifest.json`. New exports include:
 
 The digest index detects corrupted, swapped, extra, missing, or duplicate bundle entries. HMAC-SHA256 signing can prove that the verifier and exporter share the same key. It is not public-key identity, and it does not encrypt the bundle.
 
+Redacted exports are metadata-only bundles. They omit transcript and prefill source text, write `transcript_redacted=true` into the thread ledger, set fallback mode to `unavailable_redacted_transcript`, and set `prefill_source.source_redacted=true` when a prefill manifest is included without its source file. Redaction is not encryption; hard snapshots and metadata may still reveal sensitive state.
+
 ## Reload Order
 
 Thread reload should happen in this order:

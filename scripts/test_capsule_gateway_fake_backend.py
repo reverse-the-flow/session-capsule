@@ -3,11 +3,13 @@
 
 from __future__ import annotations
 
+import io
 import json
 import subprocess
 import sys
 import tempfile
 import threading
+import zipfile
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
@@ -384,6 +386,29 @@ def main() -> None:
                 raise AssertionError("gateway export did not sign bundle when a signing key was configured")
             if exported.get("signature_key_id") != "gateway-test":
                 raise AssertionError("gateway export did not include configured signature key id")
+
+            redacted_exported, _redacted_headers = post_json(
+                f"{gateway_url}/api/capsules/export",
+                {
+                    "thread_id": "gateway-thread",
+                    "bundle_id": "gateway-thread-redacted",
+                    "include_snapshots": False,
+                    "redact_transcript": True,
+                },
+                auth_headers,
+            )
+            if redacted_exported.get("redacted_transcript") is not True:
+                raise AssertionError("gateway redacted export did not report redacted transcript")
+            redacted_bytes, _redacted_download_headers = get_bytes(
+                f"{gateway_url}/api/capsules/bundles/gateway-thread-redacted",
+                auth_headers,
+            )
+            with zipfile.ZipFile(io.BytesIO(redacted_bytes), "r") as bundle:
+                redacted_manifest = json.loads(bundle.read("manifest.json").decode("utf-8"))
+                if redacted_manifest.get("redaction", {}).get("policy") != "metadata_only":
+                    raise AssertionError("gateway redacted export did not record redaction policy")
+                if bundle.read("transcript.jsonl"):
+                    raise AssertionError("gateway redacted export included transcript content")
 
             bundle_list = get_json(f"{gateway_url}/api/capsules/bundles", auth_headers)
             if not any(item["bundle_id"] == "gateway-thread-test" for item in bundle_list["bundles"]):

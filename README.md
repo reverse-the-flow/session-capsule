@@ -170,7 +170,7 @@ py -3 .\scripts\capsule_cli.py import .\research-loop-small.scap
 py -3 .\scripts\capsule_cli.py import .\research-loop-small.scap --thread-id research-loop-copy
 ```
 
-By default, `.scap` export is ledger-only: it includes endpoint metadata, thread ledger, transcript, capsule manifests, prefill sources, and per-entry file digests, but omits hard snapshot blobs. Add `--include-snapshots` only when intentionally moving same-runtime local snapshot files.
+By default, `.scap` export is ledger-only: it includes endpoint metadata, thread ledger, transcript, capsule manifests, prefill sources, and per-entry file digests, but omits hard snapshot blobs. Add `--include-snapshots` only when intentionally moving same-runtime local snapshot files. Add `--redact-transcript` to create a metadata-only bundle that omits transcript and prefill source text; this is useful for inspection, but it is not encryption.
 
 Import warns when the bundle endpoint id already exists locally with different runtime, model, tokenizer, context, slot, or URL metadata.
 

@@ -46,6 +46,10 @@
       "type": "string",
       "description": "Path relative to the capsule state directory. Do not include the .capsules prefix."
     },
+    "transcript_redacted": {
+      "type": "boolean",
+      "description": "True when transcript content was intentionally omitted from an exported or imported bundle."
+    },
     "active_capsule_id": {
       "type": ["string", "null"],
       "pattern": "^[A-Za-z0-9_.:-]+$"
@@ -76,7 +80,8 @@
           "enum": [
             "full_replay",
             "replay_from_checkpoint",
-            "soft_only"
+            "soft_only",
+            "unavailable_redacted_transcript"
           ]
         },
         "replay_start_token": {

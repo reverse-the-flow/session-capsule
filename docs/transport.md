@@ -160,6 +160,16 @@ Export defaults to ledger-only. Set `include_snapshots=true` only when intention
 
 Every new export includes `file_digests` in `manifest.json`. The digest index covers every zip entry except `manifest.json`.
 
+Set `redact_transcript=true` to produce a metadata-only bundle. Redacted exports:
+
+- write empty transcript files
+- omit prefill source text files
+- mark thread ledgers with `transcript_redacted=true`
+- set fallback mode to `unavailable_redacted_transcript`
+- mark prefill manifests with `prefill_source.source_redacted=true`
+
+Redaction is not encryption. It removes transcript and prefill source text from the bundle, but remaining metadata, digests, token ranges, endpoint ids, and included hard snapshots may still be sensitive.
+
 If the gateway has a configured signing key, the export response metadata includes:
 
 ```json
@@ -232,7 +242,7 @@ Use `X-Capsule-Import-Thread: research-loop-copy` to import raw uploaded bytes u
 
 Use `X-Capsule-Import-Force: true` only when intentionally replacing an existing local thread.
 
-Imports verify bundles that include `file_digests`. Digest mismatch or duplicate zip entries fail before extraction. When a target thread id is supplied, thread-owned ledger, transcript, manifest, and snapshot refs are remapped under `threads/TARGET/`; endpoint and prefill records remain shared state records.
+Imports verify bundles that include `file_digests`. Digest mismatch or duplicate zip entries fail before extraction. When a target thread id is supplied, thread-owned ledger, transcript, manifest, and snapshot refs are remapped under `threads/TARGET/`; endpoint and prefill records remain shared state records. Redacted imports warn that transcript content is unavailable and preserve the unavailable replay fallback.
 
 ## Verify
 
@@ -293,6 +303,7 @@ Implemented now:
 
 - per-entry SHA-256 file digests in bundle `manifest.json`
 - optional HMAC-SHA256 signatures in bundle `manifest.json`
+- metadata-only redacted transcript export
 - `capsule verify BUNDLE.scap`
 - import-time digest verification for bundles that carry `file_digests`
 - duplicate zip-entry rejection

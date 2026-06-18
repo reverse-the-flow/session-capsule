@@ -260,12 +260,20 @@ Preview export size without writing:
 py -3 .\scripts\capsule_cli.py export --thread research-loop --out .\research-loop.scap --dry-run
 ```
 
+Export a metadata-only bundle without transcript or prefill source text:
+
+```powershell
+py -3 .\scripts\capsule_cli.py export --thread research-loop --out .\research-loop-redacted.scap --redact-transcript
+```
+
 Import verifies bundles that include `file_digests`, rejects duplicate or digest-mismatched entries, and warns when an incoming endpoint record differs from an existing local endpoint with the same id. Use `import --thread-id NEW_ID` to import a bundle as a new local thread.
+Redacted imports preserve `transcript_redacted=true` and mark transcript replay fallback unavailable.
 
 Current boundary:
 
 - implemented: digest-based integrity checks
 - implemented: optional HMAC-SHA256 signatures
+- implemented: metadata-only redacted transcript export
 - key sources: `--signature-key-file` or `--signature-key-env`
 - keys are not stored in `.capsules`
 - gateway signing/required-signature import is controlled by launch flags
@@ -273,6 +281,8 @@ Current boundary:
 - gateway request auth is controlled by `--auth-token-file` or `--auth-token-env`
 - gateway transport jobs authenticate with `job run --gateway-auth-token-file` or `job run --gateway-auth-token-env`
 - not implemented yet: encryption or sealed user-carried blobs
+
+Redaction is not encryption. It removes transcript and prefill source text, but metadata, digests, token ranges, endpoint ids, and included hard snapshots may still be sensitive.
 
 ## Model Plane
 

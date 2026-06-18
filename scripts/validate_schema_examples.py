@@ -186,7 +186,9 @@ def validate_capsule(data: dict[str, Any], endpoint: dict[str, Any]) -> None:
         prefill_source = data["prefill_source"]
         if not isinstance(prefill_source, dict):
             raise ValidationError("capsule.prefill_source must be an object")
-        require_state_relative_ref("capsule.prefill_source.source_ref", prefill_source.get("source_ref"))
+        require_state_relative_ref("capsule.prefill_source.source_ref", prefill_source.get("source_ref"), allow_null=True)
+        if prefill_source.get("source_ref") is None and prefill_source.get("source_redacted") is not True:
+            raise ValidationError("capsule.prefill_source.source_ref may be null only when source_redacted is true")
 
 
 def validate_thread(data: dict[str, Any], capsule: dict[str, Any], endpoint: dict[str, Any]) -> None:
@@ -233,8 +235,12 @@ def validate_thread(data: dict[str, Any], capsule: dict[str, Any], endpoint: dic
 
     fallback = data["fallback"]
     require_keys("thread.fallback", fallback, ["mode", "replay_start_token", "reason"])
+    if data.get("transcript_redacted") is not None:
+        require_bool("thread.transcript_redacted", data["transcript_redacted"])
+        if data["transcript_redacted"] and fallback["mode"] != "unavailable_redacted_transcript":
+            raise ValidationError("redacted thread ledgers must mark transcript replay fallback unavailable")
     active_link = by_id[active]
-    if fallback["replay_start_token"] < active_link["token_end"]:
+    if fallback["mode"] != "unavailable_redacted_transcript" and fallback["replay_start_token"] < active_link["token_end"]:
         raise ValidationError("fallback replay_start_token must not precede active capsule token_end")
 
 

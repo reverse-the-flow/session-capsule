@@ -307,6 +307,9 @@ Preview export size without writing:
 Include local hard snapshots only when intentionally moving same-runtime blobs:
   py -3 .\\scripts\\capsule_cli.py export --thread research-loop --out .\\research-loop.scap --include-snapshots
 
+Metadata-only redacted export:
+  py -3 .\\scripts\\capsule_cli.py export --thread research-loop --out .\\research-loop-redacted.scap --redact-transcript
+
 Import:
   py -3 .\\scripts\\capsule_cli.py import .\\research-loop.scap
 
@@ -321,13 +324,15 @@ Verify bundle integrity:
 Sign with an explicit local key file:
   py -3 .\\scripts\\capsule_cli.py export --thread research-loop --out .\\research-loop.scap --signature-key-file .\\capsule-signing.key --signature-key-id local
 
-If snapshots are omitted, transcript replay remains the fallback.
+If snapshots are omitted, transcript replay remains the fallback unless the bundle was exported with --redact-transcript.
+Redaction omits transcript and prefill source text, but it is not encryption.
 
 For gateway upload/download transport:
   capsule help transport""",
     "security": """Security status:
   implemented: per-entry sha256 file_digests in exported .scap bundles
   implemented: optional HMAC-SHA256 bundle signatures
+  implemented: metadata-only redacted transcript export
   implemented: capsule verify rejects duplicate or digest-mismatched bundle entries
   implemented: import verifies bundles that include file_digests
   implemented: import warns on local endpoint metadata conflicts
@@ -1774,6 +1779,39 @@ def add_export_file(entries: list[BundleEntry], source: Path, arcname: str) -> b
     return True
 
 
+def export_ledger_payload(ledger: JSONDict, redact_transcript: bool) -> JSONDict:
+    payload = json.loads(json.dumps(ledger))
+    if not redact_transcript:
+        return payload
+
+    payload["transcript_redacted"] = True
+    payload["open_diffs"] = []
+    payload["fallback"] = {
+        "mode": "unavailable_redacted_transcript",
+        "replay_start_token": 0,
+        "reason": "Transcript content was redacted from this bundle; transcript replay fallback is unavailable.",
+    }
+    notes = payload.setdefault("notes", [])
+    if isinstance(notes, list):
+        notes.append("Transcript content was redacted during bundle export.")
+    return payload
+
+
+def export_manifest_payload(manifest: JSONDict, redact_transcript: bool) -> JSONDict:
+    payload = json.loads(json.dumps(manifest))
+    if not redact_transcript:
+        return payload
+
+    prefill_source = payload.get("prefill_source")
+    if isinstance(prefill_source, dict):
+        prefill_source["source_ref"] = None
+        prefill_source["source_redacted"] = True
+        notes = payload.setdefault("notes", [])
+        if isinstance(notes, list):
+            notes.append("Prefill source content was redacted during bundle export.")
+    return payload
+
+
 def build_export_plan(
     store: Store,
     ledger: JSONDict,
@@ -1786,12 +1824,13 @@ def build_export_plan(
     capsule_index: list[JSONDict] = []
     omitted_snapshots: list[str] = []
     included_files: list[str] = []
+    ledger_payload = export_ledger_payload(ledger, redact_transcript)
 
-    add_export_data(entries, "thread-ledger.json", pretty_json_bytes(ledger))
+    add_export_data(entries, "thread-ledger.json", pretty_json_bytes(ledger_payload))
     add_export_data(entries, "transcript.jsonl", text_bytes(transcript_content))
 
     state_ledger_ref = f"threads/{thread_id}/thread-ledger.json"
-    add_export_data(entries, state_ledger_ref, pretty_json_bytes(ledger))
+    add_export_data(entries, state_ledger_ref, pretty_json_bytes(ledger_payload))
     included_files.append(state_ledger_ref)
 
     state_transcript_ref = ledger["transcript_ref"]
@@ -1809,7 +1848,7 @@ def build_export_plan(
             capsule_index.append({**link, "included_manifest": False})
             continue
         manifest = read_json(manifest_path)
-        add_export_file(entries, manifest_path, manifest_ref)
+        add_export_data(entries, manifest_ref, pretty_json_bytes(export_manifest_payload(manifest, redact_transcript)))
         included_files.append(manifest_ref)
 
         prefill_source = manifest.get("prefill_source")
@@ -2164,6 +2203,11 @@ def export_bundle(args: argparse.Namespace) -> int:
         "export_mode": "with-local-snapshots" if args.include_snapshots else "ledger-only",
         "redacted_transcript": args.redact_transcript,
         "includes_snapshots": args.include_snapshots,
+        "redaction": {
+            "transcript": bool(args.redact_transcript),
+            "prefill_sources": bool(args.redact_transcript),
+            "policy": "metadata_only" if args.redact_transcript else "none",
+        },
         "notes": [
             "Model weights are never included in .scap bundles.",
             "Hard snapshots are included only when includes_snapshots is true.",
@@ -3167,6 +3211,8 @@ def inspect(args: argparse.Namespace) -> int:
         print(f"active capsule: {ledger.get('active_capsule_id')}")
         print(f"capsules: {len(ledger.get('capsules', []))}")
         print(f"open diffs: {len(ledger.get('open_diffs', []))}")
+        if ledger.get("transcript_redacted"):
+            print("transcript redacted: yes")
         print(f"fallback: {ledger['fallback']['mode']} from token {ledger['fallback']['replay_start_token']}")
         return 0
 

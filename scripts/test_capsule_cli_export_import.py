@@ -54,8 +54,10 @@ def main() -> None:
         renamed_state = temp_path / "renamed" / ".capsules"
         conflict_state = temp_path / "conflict" / ".capsules"
         signed_import_state = temp_path / "signed-imported" / ".capsules"
+        redacted_import_state = temp_path / "redacted-imported" / ".capsules"
         prefill_path = temp_path / "prefill.md"
         bundle_path = temp_path / "thread.scap"
+        redacted_bundle_path = temp_path / "thread-redacted.scap"
         signed_bundle_path = temp_path / "thread-signed.scap"
         signature_key_path = temp_path / "signature.key"
 
@@ -118,6 +120,37 @@ def main() -> None:
         verify_result = run_cli(source_state, "verify", str(bundle_path))
         if "verified: yes" not in verify_result.stdout:
             raise AssertionError("bundle verify command did not accept exported bundle")
+
+        run_cli(source_state, "export", "--thread", "export-thread", "--out", str(redacted_bundle_path), "--redact-transcript")
+        with zipfile.ZipFile(redacted_bundle_path, "r") as bundle:
+            names = set(bundle.namelist())
+            if "prefills/user_default/v001/source.md" in names:
+                raise AssertionError("redacted bundle unexpectedly included prefill source")
+            if bundle.read("transcript.jsonl") or bundle.read("threads/export-thread/transcript.jsonl"):
+                raise AssertionError("redacted bundle unexpectedly included transcript content")
+            redacted_manifest = json.loads(bundle.read("manifest.json").decode("utf-8"))
+            if redacted_manifest.get("redaction", {}).get("policy") != "metadata_only":
+                raise AssertionError("redacted bundle did not record metadata-only redaction policy")
+            redacted_ledger = json.loads(bundle.read("thread-ledger.json").decode("utf-8"))
+            if redacted_ledger.get("transcript_redacted") is not True:
+                raise AssertionError("redacted bundle ledger did not mark transcript_redacted")
+            if redacted_ledger.get("fallback", {}).get("mode") != "unavailable_redacted_transcript":
+                raise AssertionError("redacted bundle did not disable transcript replay fallback")
+            redacted_prefill_manifest = json.loads(bundle.read("prefills/user_default/v001/manifest.json").decode("utf-8"))
+            prefill_source = redacted_prefill_manifest.get("prefill_source", {})
+            if prefill_source.get("source_ref") is not None or prefill_source.get("source_redacted") is not True:
+                raise AssertionError("redacted prefill manifest did not mark omitted source")
+        redacted_import = run_cli(redacted_import_state, "import", str(redacted_bundle_path))
+        if "warning: transcript was redacted in this bundle" not in redacted_import.stdout:
+            raise AssertionError("redacted import did not warn about missing transcript")
+        imported_redacted_ledger = json.loads(
+            (redacted_import_state / "threads" / "export-thread" / "thread-ledger.json").read_text(encoding="utf-8")
+        )
+        if imported_redacted_ledger.get("fallback", {}).get("mode") != "unavailable_redacted_transcript":
+            raise AssertionError("redacted import did not preserve unavailable fallback")
+        redacted_inspect = run_cli(redacted_import_state, "inspect", "--thread", "export-thread")
+        if "transcript redacted: yes" not in redacted_inspect.stdout:
+            raise AssertionError("inspect did not expose redacted transcript state")
 
         run_cli(imported_state, "import", str(bundle_path))
         imported_ledger = imported_state / "threads" / "export-thread" / "thread-ledger.json"

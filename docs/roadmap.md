@@ -242,6 +242,7 @@ Initial status:
 - `export --thread X --out X.scap` writes a zip bundle with ledger, transcript, endpoint metadata, capsule manifests, prefill sources, and capsule index.
 - Snapshot blobs are omitted by default and require `--include-snapshots`.
 - `export --dry-run` prints the planned bundle entries and estimated payload bytes before writing.
+- `export --redact-transcript` writes a metadata-only bundle without transcript or prefill source text and marks replay fallback unavailable.
 - `import X.scap` restores endpoint, prefill, and thread files into a fresh state directory.
 - `import X.scap --thread-id NEW_ID` remaps thread-owned ledger, transcript, manifest, and snapshot refs under `threads/NEW_ID/`.
 - `import X.scap` warns when the bundle endpoint id already exists locally with different runtime, model, tokenizer, context, slot, or URL metadata.
@@ -488,6 +489,7 @@ Initial status:
 
 - New `.scap` exports include `integrity.file_digest_algorithm = sha256`.
 - New `.scap` exports include `file_digests` for every zip entry except `manifest.json`.
+- Redacted `.scap` exports omit transcript and prefill source text, mark `transcript_redacted=true`, and preserve that warning on import.
 - `capsule_cli.py verify BUNDLE.scap` verifies the file digest index.
 - `export --signature-key-file KEY --signature-key-id ID` writes an optional HMAC-SHA256 signature.
 - `capsule_cli.py job run EXPORT_JOB.json --signature-key-file KEY` signs direct Model Plane export jobs without storing the key in the packet.
@@ -496,7 +498,7 @@ Initial status:
 - `capsule_gateway.py --signature-key-file KEY --require-bundle-signature` applies signing and required verification to gateway transport.
 - `import BUNDLE.scap` verifies bundles that include `file_digests` before extracting state files.
 - `scripts/test_capsule_cli_export_import.py` validates successful verification, signature checks, and tamper rejection.
-- Encryption and sealed user-carried blobs are not implemented yet.
+- Encryption and sealed user-carried blobs are not implemented yet; redaction is metadata-only and not cryptographic sealing.
 
 ## Stage 12: Gateway Access Control
 

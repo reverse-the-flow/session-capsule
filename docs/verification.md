@@ -20,6 +20,7 @@ It performs:
 - state-relative ledger, prefill, and hard snapshot reference smoke test
 - `.scap` export/import/verify, dry-run sizing, endpoint compatibility warning, signature, and tamper-rejection smoke test
 - `.scap` import thread-id override and ref remapping smoke test
+- `.scap` redacted export/import smoke test for metadata-only transcript sharing
 - storage config, pinning, stats, and GC smoke test
 - Model Plane job-packet smoke test, including launch-profile rendering/checking, shutdown planning, signed export jobs, and authenticated gateway transport job packets
 - local gateway fake-backend smoke test
@@ -57,6 +58,7 @@ The gateway integration contract is verified by fake-backend tests that exercise
 - identity status discovery for Open WebUI and opencode thread metadata
 - state-relative ledger, prefill, and snapshot refs in runtime-written files
 - `.scap` export, list, download, raw upload import, and bundle delete
+- gateway redacted bundle export
 - gateway raw-upload and stored-bundle import target-thread override
 - authenticated gateway requests and transport job packets when a token is configured
 - Model Plane gateway launch-profile command rendering, authenticated status checking, and inline secret-value rejection
