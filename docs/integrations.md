@@ -171,12 +171,15 @@ Invoke-RestMethod `
 The gateway also exposes `.scap` upload/download controls for local UIs and Model Plane:
 
 ```text
+GET    /api/capsules/status
 POST   /api/capsules/export
 GET    /api/capsules/bundles
 GET    /api/capsules/bundles/{bundle_id}
 POST   /api/capsules/import
 DELETE /api/capsules/bundles/{bundle_id}
 ```
+
+Model Plane should read `/api/capsules/status` first and use its `transport` object to discover the concrete endpoint paths, content type, max upload size, auth policy, signing policy, and available upload/download capabilities for the running gateway.
 
 Transport details are in:
 

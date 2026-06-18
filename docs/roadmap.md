@@ -445,6 +445,7 @@ Initial status:
 - `GET /api/capsules/bundles/{bundle_id}` downloads a stored bundle with capsule-specific headers.
 - `POST /api/capsules/import` imports either an existing stored bundle or raw uploaded `.scap` bytes.
 - `DELETE /api/capsules/bundles/{bundle_id}` deletes a stored bundle without deleting imported thread state.
+- `/api/capsules/status` advertises a versioned `transport` object with endpoint paths, upload size, content type, auth policy, signing policy, and enabled bundle capabilities for Model Plane discovery.
 - Bundle ids are slugged and scoped to `.capsules/bundles/`.
 - The gateway launch flag `--max-bundle-bytes` caps raw upload size.
 - Gateway launch flags can sign exported bundles and require verified signatures before import.

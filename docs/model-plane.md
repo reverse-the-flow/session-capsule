@@ -73,10 +73,13 @@ This keeps the standalone CLI and gateway useful without Model Plane. It also le
 For UI-driven `.scap` transfer, Model Plane should call the gateway bundle endpoints instead of reimplementing the archive format:
 
 ```text
+GET    /api/capsules/status
 POST   /api/capsules/export
 GET    /api/capsules/bundles/{bundle_id}
 POST   /api/capsules/import
 ```
+
+Model Plane should read `/api/capsules/status` first and use its `transport` object as the runtime contract. It advertises the API version, max raw upload bytes, `.scap` content type, endpoint paths, auth requirement, signing policy, and upload/download capabilities for the specific gateway instance that was launched.
 
 The gateway owns local export/import mechanics. Model Plane owns auth, UX, retention, and remote exposure.
 

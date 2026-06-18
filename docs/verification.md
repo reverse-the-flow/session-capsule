@@ -20,6 +20,7 @@ It performs:
 - Model Plane job-packet smoke test, including shutdown planning, signed export jobs, and authenticated gateway transport job packets
 - local gateway fake-backend smoke test
 - gateway auth plus signed bundle export/list/download/upload/delete smoke path
+- gateway status discovery for transport API version, upload size, content type, auth policy, signing policy, endpoint paths, and bundle capabilities
 
 ## Current Evidence
 
@@ -46,6 +47,7 @@ The gateway integration contract is verified by fake-backend tests that exercise
 - Open WebUI-style forwarded identity headers
 - hard restore plus diff forwarding
 - checkpoint after response
+- transport status discovery for Model Plane upload/download integration
 - `.scap` export, list, download, raw upload import, and bundle delete
 - authenticated gateway requests and transport job packets when a token is configured
 

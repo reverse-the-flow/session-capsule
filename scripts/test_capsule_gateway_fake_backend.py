@@ -225,6 +225,26 @@ def main() -> None:
             status = get_json(f"{gateway_url}/api/capsules/status", auth_headers)
             if status.get("auth_required") is not True:
                 raise AssertionError("gateway status did not report enabled auth")
+            transport = status.get("transport", {})
+            if transport.get("api_version") != "0.1":
+                raise AssertionError("gateway status did not expose transport API version")
+            if transport.get("max_upload_bytes") != 10 * 1000 * 1000:
+                raise AssertionError("gateway status did not expose max upload bytes")
+            if transport.get("bundle_content_type") != "application/vnd.session-capsule.scap":
+                raise AssertionError("gateway status did not expose bundle content type")
+            if transport.get("auth", {}).get("required") is not True:
+                raise AssertionError("gateway transport status did not report auth policy")
+            if transport.get("signing", {}).get("exports_signed") is not True:
+                raise AssertionError("gateway transport status did not report signing policy")
+            if transport.get("signing", {}).get("signature_key_id") != "gateway-test":
+                raise AssertionError("gateway transport status did not report signature key id")
+            capabilities = transport.get("capabilities", {})
+            for capability in ["export", "download", "raw_upload_import", "stored_bundle_import", "delete"]:
+                if capabilities.get(capability) is not True:
+                    raise AssertionError(f"gateway transport status did not advertise {capability}")
+            endpoints = transport.get("endpoints", {})
+            if endpoints.get("download_bundle", {}).get("path_template") != "/api/capsules/bundles/{bundle_id}":
+                raise AssertionError("gateway transport status did not expose download path template")
 
             first_payload = {
                 "model": "fake-model",

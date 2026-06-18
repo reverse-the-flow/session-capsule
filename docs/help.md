@@ -154,12 +154,15 @@ Gateway v0 is non-streaming. Clients should send `stream=false`.
 Gateway transport exposes `.scap` bundles to local UIs or Model Plane:
 
 ```text
+GET    /api/capsules/status
 POST   /api/capsules/export
 GET    /api/capsules/bundles
 GET    /api/capsules/bundles/{bundle_id}
 POST   /api/capsules/import
 DELETE /api/capsules/bundles/{bundle_id}
 ```
+
+Model Plane should read `/api/capsules/status` first. The response includes a versioned `transport` object with endpoint paths, `max_upload_bytes`, content type, auth policy, signing policy, and advertised upload/download capabilities.
 
 Bundles live under:
 

@@ -237,12 +237,15 @@ Point an OpenAI-compatible client at `http://127.0.0.1:8765/v1`. The v0 gateway 
 The gateway also exposes local `.scap` bundle transport:
 
 ```text
+GET    /api/capsules/status
 POST   /api/capsules/export
 GET    /api/capsules/bundles
 GET    /api/capsules/bundles/{bundle_id}
 POST   /api/capsules/import
 DELETE /api/capsules/bundles/{bundle_id}
 ```
+
+Model Plane should read `/api/capsules/status` first and use the response's `transport` object to discover endpoint paths, upload size, content type, auth policy, signing policy, and enabled bundle capabilities.
 
 Bundles are stored under `.capsules/bundles/`. Export defaults to ledger-only; hard snapshots require `include_snapshots=true`.
 

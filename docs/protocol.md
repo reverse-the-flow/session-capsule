@@ -170,12 +170,15 @@ If a hard capsule is available, the gateway restores it into the configured slot
 The same gateway exposes `.scap` bundle transport for local UI and Model Plane integration:
 
 ```text
+GET    /api/capsules/status
 POST   /api/capsules/export
 GET    /api/capsules/bundles
 GET    /api/capsules/bundles/{bundle_id}
 POST   /api/capsules/import
 DELETE /api/capsules/bundles/{bundle_id}
 ```
+
+The status response includes a versioned `transport` object so Model Plane can discover the running gateway's upload/download contract before issuing bundle operations.
 
 Bundle transport moves portable thread artifacts. It still does not transport model weights, and hard snapshot blobs remain optional same-runtime artifacts.
 

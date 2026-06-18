@@ -22,6 +22,7 @@ X-Capsule-Gateway-Key: TOKEN
 The local gateway exposes:
 
 ```text
+GET    /api/capsules/status
 POST   /api/capsules/export
 GET    /api/capsules/bundles
 GET    /api/capsules/bundles/{bundle_id}
@@ -34,6 +35,54 @@ Bundles are stored under:
 ```text
 .capsules/bundles/
 ```
+
+## Discovery
+
+Model Plane should check gateway status before enabling upload/download controls:
+
+```powershell
+Invoke-RestMethod http://127.0.0.1:8765/api/capsules/status
+```
+
+The response includes a versioned `transport` object:
+
+```json
+{
+  "transport": {
+    "api_version": "0.1",
+    "bundle_format": "session-capsules.scap",
+    "bundle_content_type": "application/vnd.session-capsule.scap",
+    "max_upload_bytes": 5368709120,
+    "capabilities": {
+      "export": true,
+      "list": true,
+      "download": true,
+      "raw_upload_import": true,
+      "stored_bundle_import": true,
+      "delete": true,
+      "digest_verification": true,
+      "hmac_sha256_signing": true,
+      "require_signature_on_import": false
+    },
+    "endpoints": {
+      "export": {"method": "POST", "path": "/api/capsules/export"},
+      "download_bundle": {"method": "GET", "path_template": "/api/capsules/bundles/{bundle_id}"},
+      "import": {"method": "POST", "path": "/api/capsules/import"}
+    },
+    "auth": {
+      "required": true,
+      "accepted_headers": ["Authorization: Bearer TOKEN", "X-Capsule-Gateway-Key"]
+    },
+    "signing": {
+      "exports_signed": true,
+      "signature_key_id": "local",
+      "required_on_import": false
+    }
+  }
+}
+```
+
+This is the runtime contract for launchers and local UIs. The docs describe the same API, but the status payload tells Model Plane what this gateway instance actually started with.
 
 ## Export
 

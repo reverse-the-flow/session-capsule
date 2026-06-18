@@ -279,6 +279,51 @@ def list_bundles(config: GatewayConfig) -> list[JSONDict]:
     return [bundle_metadata(config, path) for path in sorted(bundles_dir(config).glob("*.scap"))]
 
 
+def transport_contract(config: GatewayConfig) -> JSONDict:
+    signing_enabled = bool(config.signature_key_file or config.signature_key_env)
+    return {
+        "api_version": "0.1",
+        "bundle_format": "session-capsules.scap",
+        "bundle_content_type": "application/vnd.session-capsule.scap",
+        "bundle_store": "bundles/",
+        "max_upload_bytes": config.max_bundle_bytes,
+        "capabilities": {
+            "export": True,
+            "list": True,
+            "download": True,
+            "raw_upload_import": True,
+            "stored_bundle_import": True,
+            "delete": True,
+            "digest_verification": True,
+            "hmac_sha256_signing": signing_enabled,
+            "require_signature_on_import": config.require_bundle_signature,
+        },
+        "endpoints": {
+            "status": {"method": "GET", "path": "/api/capsules/status"},
+            "threads": {"method": "GET", "path": "/api/capsules/threads"},
+            "checkpoint": {"method": "POST", "path": "/api/capsules/checkpoint"},
+            "export": {"method": "POST", "path": "/api/capsules/export"},
+            "list_bundles": {"method": "GET", "path": "/api/capsules/bundles"},
+            "download_bundle": {"method": "GET", "path_template": "/api/capsules/bundles/{bundle_id}"},
+            "import": {"method": "POST", "path": "/api/capsules/import"},
+            "delete_bundle": {"method": "DELETE", "path_template": "/api/capsules/bundles/{bundle_id}"},
+        },
+        "export_defaults": {
+            "include_snapshots": False,
+            "redact_transcript": False,
+        },
+        "auth": {
+            "required": config.auth_token is not None,
+            "accepted_headers": ["Authorization: Bearer TOKEN", "X-Capsule-Gateway-Key"],
+        },
+        "signing": {
+            "exports_signed": signing_enabled,
+            "signature_key_id": config.signature_key_id if signing_enabled else None,
+            "required_on_import": config.require_bundle_signature,
+        },
+    }
+
+
 def export_bundle_api(config: GatewayConfig, payload: JSONDict) -> JSONDict:
     thread_id = cc.slugify(str(payload["thread_id"]))
     bundle_id = safe_bundle_id(str(payload.get("bundle_id") or new_bundle_id(thread_id)))
@@ -661,6 +706,7 @@ def make_handler(config: GatewayConfig) -> type[BaseHTTPRequestHandler]:
                         "bundle_signing": bool(config.signature_key_file or config.signature_key_env),
                         "require_bundle_signature": config.require_bundle_signature,
                         "auth_required": config.auth_token is not None,
+                        "transport": transport_contract(config),
                     },
                 )
                 return
