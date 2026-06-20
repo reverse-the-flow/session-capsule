@@ -13,6 +13,8 @@ checkpointing.
 from __future__ import annotations
 
 import argparse
+import base64
+import binascii
 import contextlib
 import hmac
 import json
@@ -21,8 +23,8 @@ import re
 import threading
 import uuid
 import zipfile
-from dataclasses import dataclass
-from datetime import datetime
+from dataclasses import dataclass, field
+from datetime import datetime, timedelta
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
@@ -33,6 +35,9 @@ import capsule_cli as cc
 
 
 JSONDict = dict[str, Any]
+
+HANDOFF_SCHEMA_VERSION = "session-capsule-gateway-handoff-v1"
+HANDOFF_TTL_SECONDS = 15 * 60
 
 
 THREAD_HEADER_CANDIDATES = [
@@ -61,6 +66,9 @@ CORS_ALLOW_HEADERS = ", ".join(
         "X-Capsule-Workspace",
         "X-Capsule-Prefill",
         "X-Capsule-Bundle-Id",
+        "X-Capsule-Bundle-Force",
+        "X-Capsule-Bundle-SHA256",
+        "X-Capsule-Handoff-Id",
         "X-Capsule-Import-Force",
         "X-Capsule-Import-Thread",
         "X-OpenWebUI-Chat-Id",
@@ -75,6 +83,7 @@ CORS_EXPOSE_HEADERS = ", ".join(
         "Content-Disposition",
         "X-Capsule-Bundle-Id",
         "X-Capsule-Bundle-SHA256",
+        "X-Capsule-Handoff-Id",
         "X-Capsule-Thread",
         "X-Capsule-Mode",
         "X-Capsule-Checkpoint",
@@ -102,6 +111,7 @@ class GatewayConfig:
     require_bundle_signature: bool
     auth_token: str | None
     lock: threading.Lock
+    handoffs: dict[str, JSONDict] = field(default_factory=dict)
     cors_allow_origin: str | None = None
     bundle_policy_preset: str = "report"
     bundle_policy_disallow_plaintext: bool = False
@@ -365,6 +375,9 @@ def transport_contract(config: GatewayConfig) -> JSONDict:
             "store_upload": True,
             "raw_upload_import": True,
             "stored_bundle_import": True,
+            "handoff": True,
+            "upload_handshake": True,
+            "download_handshake": True,
             "delete": True,
             "thread_id_override": True,
             "digest_verification": True,
@@ -380,6 +393,7 @@ def transport_contract(config: GatewayConfig) -> JSONDict:
             "list_bundles": {"method": "GET", "path": "/api/capsules/bundles"},
             "store_bundle": {"method": "POST", "path": "/api/capsules/bundles"},
             "download_bundle": {"method": "GET", "path_template": "/api/capsules/bundles/{bundle_id}"},
+            "handoff": {"method": "POST", "path": "/api/capsules/handoff"},
             "import": {"method": "POST", "path": "/api/capsules/import"},
             "delete_bundle": {"method": "DELETE", "path_template": "/api/capsules/bundles/{bundle_id}"},
         },
@@ -561,12 +575,40 @@ def import_bundle_file(config: GatewayConfig, path: Path, force: bool = False, t
     }
 
 
-def store_bundle_api(config: GatewayConfig, handler: BaseHTTPRequestHandler) -> JSONDict:
-    body = read_raw_body(handler, config.max_bundle_bytes)
-    requested_id = handler.headers.get("X-Capsule-Bundle-Id")
-    bundle_id = safe_bundle_id(requested_id or f"upload-{datetime.now().astimezone().strftime('%Y%m%d-%H%M%S')}-{uuid.uuid4().hex[:8]}")
+def generated_upload_bundle_id() -> str:
+    return f"upload-{datetime.now().astimezone().strftime('%Y%m%d-%H%M%S')}-{uuid.uuid4().hex[:8]}"
+
+
+def parse_bool_header(value: str | None) -> bool:
+    return str(value or "").lower() in {"1", "true", "yes"}
+
+
+def normalize_sha256(value: str | None) -> str | None:
+    if value is None:
+        return None
+    normalized = value.strip().lower()
+    if normalized.startswith("sha256:"):
+        normalized = normalized.split(":", 1)[1]
+    if not re.fullmatch(r"[a-f0-9]{64}", normalized):
+        raise ValueError("SHA-256 digest must be 64 hex characters, optionally prefixed with sha256:")
+    return normalized
+
+
+def sha256_hex(data: bytes) -> str:
+    return cc.digest_bytes(data).split(":", 1)[1]
+
+
+def verify_expected_sha256(data: bytes, expected_sha256: str | None) -> None:
+    normalized = normalize_sha256(expected_sha256)
+    if normalized and not hmac.compare_digest(sha256_hex(data), normalized):
+        raise ValueError("Uploaded bundle SHA-256 does not match the handoff digest")
+
+
+def store_bundle_bytes(config: GatewayConfig, body: bytes, bundle_id: str, force: bool = False) -> JSONDict:
+    if len(body) > config.max_bundle_bytes:
+        raise ValueError(f"Request body exceeds max bundle size: {len(body)} > {config.max_bundle_bytes}")
+    bundle_id = safe_bundle_id(bundle_id)
     path = bundle_path(config, bundle_id)
-    force = handler.headers.get("X-Capsule-Bundle-Force", "").lower() in {"1", "true", "yes"}
     if path.exists() and not force:
         raise FileExistsError(f"Bundle already exists: {bundle_id}")
     temp_path = path.with_name(f".{path.name}.{uuid.uuid4().hex}.tmp")
@@ -586,6 +628,46 @@ def store_bundle_api(config: GatewayConfig, handler: BaseHTTPRequestHandler) -> 
         raise
 
 
+def import_bundle_bytes(
+    config: GatewayConfig,
+    body: bytes,
+    bundle_id: str,
+    force: bool = False,
+    thread_id: str | None = None,
+) -> JSONDict:
+    if len(body) > config.max_bundle_bytes:
+        raise ValueError(f"Request body exceeds max bundle size: {len(body)} > {config.max_bundle_bytes}")
+    bundle_id = safe_bundle_id(bundle_id)
+    path = bundle_path(config, bundle_id)
+    if path.exists():
+        raise FileExistsError(f"Bundle already exists: {bundle_id}")
+    path.write_bytes(body)
+    try:
+        return import_bundle_file(
+            config,
+            path,
+            force,
+            thread_id,
+        )
+    except Exception:
+        with contextlib.suppress(FileNotFoundError):
+            path.unlink()
+        raise
+
+
+def store_bundle_api(config: GatewayConfig, handler: BaseHTTPRequestHandler) -> JSONDict:
+    body = read_raw_body(handler, config.max_bundle_bytes)
+    verify_expected_sha256(body, handler.headers.get("X-Capsule-Bundle-SHA256"))
+    requested_id = handler.headers.get("X-Capsule-Bundle-Id")
+    bundle_id = safe_bundle_id(requested_id or generated_upload_bundle_id())
+    force = parse_bool_header(handler.headers.get("X-Capsule-Bundle-Force"))
+    handoff_id = validate_upload_handoff_header(config, handler, bundle_id, "store", body)
+    result = store_bundle_bytes(config, body, bundle_id, force)
+    if handoff_id:
+        result["handoff_id"] = handoff_id
+    return result
+
+
 def import_bundle_api(config: GatewayConfig, handler: BaseHTTPRequestHandler) -> JSONDict:
     content_type = handler.headers.get("Content-Type", "")
     if "application/json" in content_type:
@@ -602,23 +684,310 @@ def import_bundle_api(config: GatewayConfig, handler: BaseHTTPRequestHandler) ->
         )
 
     body = read_raw_body(handler, config.max_bundle_bytes)
+    verify_expected_sha256(body, handler.headers.get("X-Capsule-Bundle-SHA256"))
     requested_id = handler.headers.get("X-Capsule-Bundle-Id")
-    bundle_id = safe_bundle_id(requested_id or f"upload-{datetime.now().astimezone().strftime('%Y%m%d-%H%M%S')}-{uuid.uuid4().hex[:8]}")
+    bundle_id = safe_bundle_id(requested_id or generated_upload_bundle_id())
+    handoff_id = validate_upload_handoff_header(config, handler, bundle_id, "import", body)
+    result = import_bundle_bytes(
+        config,
+        body,
+        bundle_id,
+        parse_bool_header(handler.headers.get("X-Capsule-Import-Force")),
+        handler.headers.get("X-Capsule-Import-Thread"),
+    )
+    if handoff_id:
+        result["handoff_id"] = handoff_id
+    return result
+
+
+def payload_bool(payload: JSONDict, key: str, default: bool = False) -> bool:
+    value = payload.get(key, default)
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        return value.lower() in {"1", "true", "yes"}
+    return bool(value)
+
+
+def payload_int(payload: JSONDict, key: str) -> int | None:
+    value = payload.get(key)
+    if value is None or value == "":
+        return None
+    parsed = int(value)
+    if parsed < 0:
+        raise ValueError(f"{key} must be non-negative")
+    return parsed
+
+
+def handoff_timestamp() -> datetime:
+    return datetime.now().astimezone()
+
+
+def handoff_common(config: GatewayConfig, operation: str, accepted: bool, reasons: list[str] | None = None) -> JSONDict:
+    return {
+        "schema_version": HANDOFF_SCHEMA_VERSION,
+        "operation": operation,
+        "accepted": accepted,
+        "reasons": reasons or [],
+        "max_upload_bytes": config.max_bundle_bytes,
+        "import_policy": bundle_import_policy(config),
+        "auth_required": config.auth_token is not None,
+    }
+
+
+def prune_expired_handoffs(config: GatewayConfig) -> None:
+    now_epoch = handoff_timestamp().timestamp()
+    expired = [
+        handoff_id
+        for handoff_id, record in config.handoffs.items()
+        if float(record.get("expires_at_epoch", 0)) <= now_epoch
+    ]
+    for handoff_id in expired:
+        config.handoffs.pop(handoff_id, None)
+
+
+def remember_handoff(config: GatewayConfig, record: JSONDict) -> JSONDict:
+    created = handoff_timestamp()
+    expires = created + timedelta(seconds=HANDOFF_TTL_SECONDS)
+    handoff_id = f"handoff-{uuid.uuid4().hex}"
+    full_record = {
+        **record,
+        "schema_version": HANDOFF_SCHEMA_VERSION,
+        "handoff_id": handoff_id,
+        "created_at": created.isoformat(timespec="seconds"),
+        "expires_at": expires.isoformat(timespec="seconds"),
+        "expires_at_epoch": expires.timestamp(),
+    }
+    with config.lock:
+        prune_expired_handoffs(config)
+        config.handoffs[handoff_id] = full_record
+    return full_record
+
+
+def lookup_handoff(config: GatewayConfig, handoff_id: str, operation: str) -> JSONDict:
+    with config.lock:
+        prune_expired_handoffs(config)
+        record = config.handoffs.get(handoff_id)
+    if record is None:
+        raise ValueError(f"Unknown or expired handoff id: {handoff_id}")
+    if record.get("operation") != operation:
+        raise ValueError(f"Handoff {handoff_id} is for {record.get('operation')}, not {operation}")
+    return record
+
+
+def upload_target_for_handoff(record: JSONDict) -> JSONDict:
+    headers = {
+        "X-Capsule-Handoff-Id": record["handoff_id"],
+        "X-Capsule-Bundle-Id": record["bundle_id"],
+    }
+    if record.get("sha256"):
+        headers["X-Capsule-Bundle-SHA256"] = f"sha256:{record['sha256']}"
+    if record["mode"] == "store":
+        path = "/api/capsules/bundles"
+        if record.get("force"):
+            headers["X-Capsule-Bundle-Force"] = "true"
+    else:
+        path = "/api/capsules/import"
+        if record.get("thread_id"):
+            headers["X-Capsule-Import-Thread"] = record["thread_id"]
+        if record.get("force"):
+            headers["X-Capsule-Import-Force"] = "true"
+    return {
+        "method": "POST",
+        "path": path,
+        "content_type": "application/vnd.session-capsule.scap",
+        "headers": headers,
+    }
+
+
+def prepare_upload_handoff(config: GatewayConfig, payload: JSONDict) -> JSONDict:
+    requested_id = str(payload.get("bundle_id") or generated_upload_bundle_id())
+    bundle_id = safe_bundle_id(requested_id)
+    mode = str(payload.get("mode") or payload.get("upload_mode") or "import").lower()
+    if mode not in {"store", "import"}:
+        raise ValueError("Upload handoff mode must be store or import")
+    size_bytes = payload_int(payload, "size_bytes")
+    sha256 = normalize_sha256(str(payload["sha256"])) if payload.get("sha256") else None
+    force = payload_bool(payload, "force", False)
+    thread_id = cc.slugify(str(payload["thread_id"])) if payload.get("thread_id") else None
+
+    reasons: list[str] = []
+    if size_bytes is not None and size_bytes > config.max_bundle_bytes:
+        reasons.append(f"bundle exceeds max upload bytes: {size_bytes} > {config.max_bundle_bytes}")
+    if bundle_path(config, bundle_id).exists() and not force:
+        reasons.append(f"bundle already exists: {bundle_id}")
+
+    response = handoff_common(config, "upload", not reasons, reasons)
+    response.update(
+        {
+            "phase": "prepare",
+            "bundle_id": bundle_id,
+            "thread_id": thread_id,
+            "mode": mode,
+            "size_bytes": size_bytes,
+            "sha256": f"sha256:{sha256}" if sha256 else None,
+            "source": payload.get("source"),
+            "compatibility": {
+                "decision": "gateway_will_validate_on_import" if mode == "import" else "store_only",
+                "transcript_replay_fallback_preserved": True,
+                "endpoint": endpoint_compatibility(config, ensure_endpoint(config)),
+            },
+        }
+    )
+    if reasons:
+        return response
+
+    record = remember_handoff(
+        config,
+        {
+            "operation": "upload",
+            "mode": mode,
+            "bundle_id": bundle_id,
+            "thread_id": thread_id,
+            "size_bytes": size_bytes,
+            "sha256": sha256,
+            "force": force,
+            "source": payload.get("source"),
+            "target_launch": payload.get("target_launch"),
+        },
+    )
+    response.update(
+        {
+            "handoff_id": record["handoff_id"],
+            "expires_at": record["expires_at"],
+            "upload": upload_target_for_handoff(record),
+            "commit": {
+                "method": "POST",
+                "path": "/api/capsules/handoff",
+                "content_type": "application/json",
+                "required_fields": ["operation", "phase", "handoff_id", "artifact_b64"],
+            },
+        }
+    )
+    return response
+
+
+def prepare_download_handoff(config: GatewayConfig, payload: JSONDict) -> JSONDict:
+    bundle_id = safe_bundle_id(str(payload["bundle_id"]))
     path = bundle_path(config, bundle_id)
-    if path.exists():
-        raise FileExistsError(f"Bundle already exists: {bundle_id}")
-    path.write_bytes(body)
+    if not path.exists():
+        response = handoff_common(config, "download", False, [f"bundle not found: {bundle_id}"])
+        response.update({"phase": "prepare", "bundle_id": bundle_id})
+        return response
+
+    metadata = bundle_metadata(config, path)
+    record = remember_handoff(
+        config,
+        {
+            "operation": "download",
+            "bundle_id": bundle_id,
+            "sha256": normalize_sha256(str(metadata["sha256"])) if metadata.get("sha256") else None,
+            "size_bytes": metadata.get("size_bytes"),
+            "source": payload.get("source"),
+        },
+    )
+    response = handoff_common(config, "download", True)
+    response.update(
+        {
+            "phase": "prepare",
+            "handoff_id": record["handoff_id"],
+            "expires_at": record["expires_at"],
+            "bundle": metadata,
+            "download": {
+                "method": "GET",
+                "path": metadata["download_url"],
+                "content_type": "application/vnd.session-capsule.scap",
+                "headers": {"X-Capsule-Handoff-Id": record["handoff_id"]},
+            },
+            "compatibility": {
+                "decision": "download_only",
+                "transcript_replay_fallback_preserved": True,
+                "endpoint": endpoint_compatibility(config, ensure_endpoint(config)),
+            },
+        }
+    )
+    return response
+
+
+def commit_upload_handoff(config: GatewayConfig, payload: JSONDict) -> JSONDict:
+    handoff_id = str(payload["handoff_id"])
+    record = lookup_handoff(config, handoff_id, "upload")
+    artifact_b64 = payload.get("artifact_b64") or payload.get("bundle_b64")
+    if not isinstance(artifact_b64, str) or not artifact_b64:
+        raise ValueError("Upload handoff commit requires artifact_b64")
     try:
-        return import_bundle_file(
+        body = base64.b64decode(artifact_b64.encode("ascii"), validate=True)
+    except (binascii.Error, UnicodeEncodeError) as exc:
+        raise ValueError("artifact_b64 must be valid base64") from exc
+
+    expected_size = record.get("size_bytes")
+    if expected_size is not None and len(body) != int(expected_size):
+        raise ValueError(f"Uploaded bundle size does not match handoff size: {len(body)} != {expected_size}")
+    verify_expected_sha256(body, str(record["sha256"]) if record.get("sha256") else None)
+
+    if record["mode"] == "store":
+        result = store_bundle_bytes(config, body, str(record["bundle_id"]), bool(record.get("force", False)))
+    else:
+        result = import_bundle_bytes(
             config,
-            path,
-            handler.headers.get("X-Capsule-Import-Force", "").lower() in {"1", "true", "yes"},
-            handler.headers.get("X-Capsule-Import-Thread"),
+            body,
+            str(record["bundle_id"]),
+            bool(record.get("force", False)),
+            str(record["thread_id"]) if record.get("thread_id") else None,
         )
-    except Exception:
-        with contextlib.suppress(FileNotFoundError):
-            path.unlink()
-        raise
+    result["handoff_id"] = handoff_id
+    return {
+        "schema_version": HANDOFF_SCHEMA_VERSION,
+        "operation": "upload",
+        "phase": "commit",
+        "accepted": True,
+        "handoff_id": handoff_id,
+        "result": result,
+    }
+
+
+def handoff_api(config: GatewayConfig, payload: JSONDict) -> JSONDict:
+    operation = str(payload.get("operation", "upload")).lower()
+    phase = str(payload.get("phase", "prepare")).lower()
+    if operation == "upload" and phase == "prepare":
+        return prepare_upload_handoff(config, payload)
+    if operation == "upload" and phase == "commit":
+        return commit_upload_handoff(config, payload)
+    if operation == "download" and phase == "prepare":
+        return prepare_download_handoff(config, payload)
+    raise ValueError("Unsupported capsule handoff operation or phase")
+
+
+def validate_download_handoff_header(config: GatewayConfig, handler: BaseHTTPRequestHandler, bundle_id: str) -> str | None:
+    handoff_id = handler.headers.get("X-Capsule-Handoff-Id")
+    if not handoff_id:
+        return None
+    record = lookup_handoff(config, handoff_id, "download")
+    if record.get("bundle_id") != safe_bundle_id(bundle_id):
+        raise ValueError(f"Handoff {handoff_id} is not for bundle {bundle_id}")
+    return handoff_id
+
+
+def validate_upload_handoff_header(
+    config: GatewayConfig,
+    handler: BaseHTTPRequestHandler,
+    bundle_id: str,
+    mode: str,
+    body: bytes,
+) -> str | None:
+    handoff_id = handler.headers.get("X-Capsule-Handoff-Id")
+    if not handoff_id:
+        return None
+    record = lookup_handoff(config, handoff_id, "upload")
+    if record.get("bundle_id") != safe_bundle_id(bundle_id):
+        raise ValueError(f"Handoff {handoff_id} is not for bundle {bundle_id}")
+    if record.get("mode") != mode:
+        raise ValueError(f"Handoff {handoff_id} is for {record.get('mode')}, not {mode}")
+    expected_size = record.get("size_bytes")
+    if expected_size is not None and len(body) != int(expected_size):
+        raise ValueError(f"Uploaded bundle size does not match handoff size: {len(body)} != {expected_size}")
+    verify_expected_sha256(body, str(record["sha256"]) if record.get("sha256") else None)
+    return handoff_id
 
 
 def endpoint_url(endpoint: JSONDict, path: str) -> str:
@@ -962,16 +1331,24 @@ def make_handler(config: GatewayConfig) -> type[BaseHTTPRequestHandler]:
                 if not path.exists():
                     send_json(self, {"error": {"message": "bundle not found"}}, status=404)
                     return
+                try:
+                    handoff_id = validate_download_handoff_header(config, self, bundle_id)
+                except Exception as exc:  # noqa: BLE001 - transfer handoff errors are user-facing.
+                    send_json(self, {"error": {"message": str(exc), "type": "handoff_error"}}, status=400)
+                    return
+                response_headers = {
+                    "Content-Disposition": f'attachment; filename="{path.name}"',
+                    "X-Capsule-Bundle-Id": path.stem,
+                    "X-Capsule-Bundle-SHA256": cc.digest_file(path),
+                }
+                if handoff_id:
+                    response_headers["X-Capsule-Handoff-Id"] = handoff_id
                 send_bytes(
                     self,
                     path.read_bytes(),
                     200,
                     "application/vnd.session-capsule.scap",
-                    {
-                        "Content-Disposition": f'attachment; filename="{path.name}"',
-                        "X-Capsule-Bundle-Id": path.stem,
-                        "X-Capsule-Bundle-SHA256": cc.digest_file(path),
-                    },
+                    response_headers,
                 )
                 return
             if parsed.path == "/v1/models":
@@ -1002,6 +1379,9 @@ def make_handler(config: GatewayConfig) -> type[BaseHTTPRequestHandler]:
                     send_json(self, store_bundle_api(config, self), headers={"X-Capsule-Bundle-Store": "ok"})
                     return
                 body = read_body(self)
+                if parsed.path == "/api/capsules/handoff":
+                    send_json(self, handoff_api(config, body), headers={"X-Capsule-Handoff": "ok"})
+                    return
                 if parsed.path == "/v1/chat/completions":
                     handle_chat_completion(self, config, body)
                     return

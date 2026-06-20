@@ -35,6 +35,7 @@ POST   /api/capsules/export
 GET    /api/capsules/bundles
 POST   /api/capsules/bundles
 GET    /api/capsules/bundles/{bundle_id}
+POST   /api/capsules/handoff
 POST   /api/capsules/import
 DELETE /api/capsules/bundles/{bundle_id}
 ```
@@ -69,6 +70,9 @@ The response includes a versioned `transport` object:
       "store_upload": true,
       "raw_upload_import": true,
       "stored_bundle_import": true,
+      "handoff": true,
+      "upload_handshake": true,
+      "download_handshake": true,
       "delete": true,
       "thread_id_override": true,
       "digest_verification": true,
@@ -79,6 +83,7 @@ The response includes a versioned `transport` object:
       "export": {"method": "POST", "path": "/api/capsules/export"},
       "store_bundle": {"method": "POST", "path": "/api/capsules/bundles"},
       "download_bundle": {"method": "GET", "path_template": "/api/capsules/bundles/{bundle_id}"},
+      "handoff": {"method": "POST", "path": "/api/capsules/handoff"},
       "import": {"method": "POST", "path": "/api/capsules/import"}
     },
     "auth": {
@@ -146,6 +151,73 @@ The same response includes an `identity` object for thread continuity:
 ```
 
 These are runtime contracts for launchers and local UIs. The docs describe the same API, but the status payload tells Model Plane what this gateway instance actually started with. A Model Plane launch profile can list `transport.required_capabilities`; `gateway check` verifies those names against `transport.capabilities` before upload/download controls are enabled.
+
+## Handoff Handshake
+
+Tray and UI clients should handshake with the gateway before moving capsule
+bytes. The handoff endpoint does not send prompt traffic and does not touch
+runtime slots. It only exchanges transfer facts and returns the exact next HTTP
+operation.
+
+Prepare an upload:
+
+```powershell
+Invoke-RestMethod `
+  -Method Post `
+  -ContentType "application/json" `
+  -Uri http://127.0.0.1:8765/api/capsules/handoff `
+  -Body '{"operation":"upload","mode":"import","bundle_id":"research-loop","thread_id":"research-loop-copy","size_bytes":12345,"sha256":"SHA256_HEX"}'
+```
+
+Accepted upload handshakes include:
+
+```json
+{
+  "operation": "upload",
+  "phase": "prepare",
+  "accepted": true,
+  "handoff_id": "handoff-...",
+  "upload": {
+    "method": "POST",
+    "path": "/api/capsules/import",
+    "content_type": "application/vnd.session-capsule.scap",
+    "headers": {
+      "X-Capsule-Handoff-Id": "handoff-...",
+      "X-Capsule-Bundle-Id": "research-loop",
+      "X-Capsule-Bundle-SHA256": "sha256:..."
+    }
+  },
+  "commit": {
+    "method": "POST",
+    "path": "/api/capsules/handoff",
+    "content_type": "application/json"
+  }
+}
+```
+
+The tray uses the JSON `commit` form so the gateway can accept or reject before
+the staged artifact leaves the tray. Browser or CLI clients can instead use the
+returned binary `upload` target and include `X-Capsule-Handoff-Id`; the gateway
+then checks the bundle id, mode, size, and SHA-256 before store/import.
+
+Prepare a download:
+
+```powershell
+Invoke-RestMethod `
+  -Method Post `
+  -ContentType "application/json" `
+  -Uri http://127.0.0.1:8765/api/capsules/handoff `
+  -Body '{"operation":"download","bundle_id":"research-loop"}'
+```
+
+Accepted download handshakes return the bundle metadata, SHA-256, and a `GET`
+target under `/api/capsules/bundles/{bundle_id}`. If the client includes the
+returned `X-Capsule-Handoff-Id` on the download request, the gateway validates
+that the handoff id matches the bundle and echoes it in the response headers.
+
+The handoff id is short-lived transfer evidence, not a substitute for gateway
+auth. If the gateway was launched with request auth, every handoff and transfer
+request still needs the configured bearer token or `X-Capsule-Gateway-Key`.
 
 ## Browser Access
 

@@ -296,10 +296,11 @@ Endpoints:
   GET    /api/capsules/bundles
   POST   /api/capsules/bundles
   GET    /api/capsules/bundles/{bundle_id}
+  POST   /api/capsules/handoff
   POST   /api/capsules/import
   DELETE /api/capsules/bundles/{bundle_id}
 
-Model Plane should read /api/capsules/status first. The response includes a versioned transport object with endpoint paths, max_upload_bytes, content type, auth policy, signing policy, and advertised upload/download capabilities. Launch profiles can list transport.required_capabilities; gateway check verifies every listed capability before Model Plane enables profile-dependent controls.
+Model Plane should read /api/capsules/status first. The response includes a versioned transport object with endpoint paths, max_upload_bytes, content type, auth policy, signing policy, handoff support, and advertised upload/download capabilities. Launch profiles can list transport.required_capabilities; gateway check verifies every listed capability before Model Plane enables profile-dependent controls.
 Browser-hosted Model Plane UIs should launch the gateway with --cors-allow-origin set to the exact UI origin, then require transport.cors.enabled before enabling direct browser upload/download controls.
 
 Bundles are stored under:
@@ -3700,6 +3701,9 @@ TRANSPORT_CAPABILITY_NAMES = {
     "store_upload",
     "raw_upload_import",
     "stored_bundle_import",
+    "handoff",
+    "upload_handshake",
+    "download_handshake",
     "delete",
     "thread_id_override",
     "digest_verification",
@@ -3715,6 +3719,9 @@ DEFAULT_MODEL_PLANE_REQUIRED_CAPABILITIES = [
     "store_upload",
     "raw_upload_import",
     "stored_bundle_import",
+    "handoff",
+    "upload_handshake",
+    "download_handshake",
     "delete",
     "thread_id_override",
     "bundle_policy_gate",

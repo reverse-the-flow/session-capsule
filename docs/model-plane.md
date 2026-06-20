@@ -129,10 +129,16 @@ POST   /api/capsules/export
 GET    /api/capsules/bundles
 POST   /api/capsules/bundles
 GET    /api/capsules/bundles/{bundle_id}
+POST   /api/capsules/handoff
 POST   /api/capsules/import
 ```
 
 Model Plane should read `/api/capsules/status` first and use its `transport`, `identity`, and `endpoint_compatibility` objects as the runtime contract. It advertises the API version, max raw upload bytes, `.scap` content type, endpoint paths, auth requirement, signing policy, import policy, upload/download capabilities, thread identity headers, and hard checkpoint readiness for the specific gateway instance that was launched.
+
+For tray-assisted capsule moves, Model Plane should prefer `POST /api/capsules/handoff`
+before upload or download. The gateway returns a short-lived handoff id plus the
+exact upload/import or download request to perform. The handoff id is transfer
+evidence and routing coordination; it does not replace gateway auth.
 
 For upload/download controls, the launch profile should list at least:
 
@@ -146,6 +152,9 @@ For upload/download controls, the launch profile should list at least:
       "store_upload",
       "raw_upload_import",
       "stored_bundle_import",
+      "handoff",
+      "upload_handshake",
+      "download_handshake",
       "delete",
       "thread_id_override",
       "digest_verification",

@@ -5,6 +5,8 @@ from __future__ import annotations
 
 import io
 import json
+import base64
+import hashlib
 import subprocess
 import sys
 import tempfile
@@ -311,7 +313,18 @@ def main() -> None:
             if "X-Capsule-Bundle-Id" not in preflight.get("Access-Control-Allow-Headers", ""):
                 raise AssertionError("gateway CORS preflight did not allow bundle upload headers")
             capabilities = transport.get("capabilities", {})
-            for capability in ["export", "download", "store_upload", "raw_upload_import", "stored_bundle_import", "delete", "bundle_policy_gate"]:
+            for capability in [
+                "export",
+                "download",
+                "store_upload",
+                "raw_upload_import",
+                "stored_bundle_import",
+                "handoff",
+                "upload_handshake",
+                "download_handshake",
+                "delete",
+                "bundle_policy_gate",
+            ]:
                 if capabilities.get(capability) is not True:
                     raise AssertionError(f"gateway transport status did not advertise {capability}")
             import_policy = transport.get("import_policy", {})
@@ -324,6 +337,8 @@ def main() -> None:
                 raise AssertionError("gateway transport status did not expose store path")
             if endpoints.get("download_bundle", {}).get("path_template") != "/api/capsules/bundles/{bundle_id}":
                 raise AssertionError("gateway transport status did not expose download path template")
+            if endpoints.get("handoff", {}).get("path") != "/api/capsules/handoff":
+                raise AssertionError("gateway transport status did not expose handoff path")
             identity = status.get("identity", {})
             if identity.get("preferred_headers", {}).get("thread") != "X-Capsule-Thread":
                 raise AssertionError("gateway identity status did not expose preferred thread header")
@@ -519,14 +534,29 @@ def main() -> None:
             if redacted_listed_bundle.get("share_safety") != "metadata_only_not_encrypted":
                 raise AssertionError("gateway bundle list did not classify redacted bundle")
 
+            download_handoff, _download_handoff_headers = post_json(
+                f"{gateway_url}/api/capsules/handoff",
+                {"operation": "download", "bundle_id": "gateway-thread-test", "source": "smoke-test"},
+                auth_headers,
+            )
+            if download_handoff.get("accepted") is not True:
+                raise AssertionError(f"gateway download handoff was not accepted: {download_handoff}")
+            if download_handoff.get("download", {}).get("path") != "/api/capsules/bundles/gateway-thread-test":
+                raise AssertionError("gateway download handoff did not return bundle download path")
+            if download_handoff.get("bundle", {}).get("sha256") != listed_bundle.get("sha256"):
+                raise AssertionError("gateway download handoff did not report bundle digest")
+            download_handoff_id = download_handoff["handoff_id"]
+
             bundle_bytes, download_headers = get_bytes(
                 f"{gateway_url}/api/capsules/bundles/gateway-thread-test",
-                {**auth_headers, "Origin": "http://127.0.0.1:3000"},
+                {**auth_headers, "Origin": "http://127.0.0.1:3000", "X-Capsule-Handoff-Id": download_handoff_id},
             )
             if not bundle_bytes.startswith(b"PK"):
                 raise AssertionError("downloaded bundle was not a zip/scap payload")
             if download_headers.get("X-Capsule-Bundle-Id") != "gateway-thread-test":
                 raise AssertionError("download did not include bundle id header")
+            if download_headers.get("X-Capsule-Handoff-Id") != download_handoff_id:
+                raise AssertionError("download did not echo the handoff id")
             if download_headers.get("Access-Control-Allow-Origin") != "http://127.0.0.1:3000":
                 raise AssertionError("download response did not include configured CORS origin")
             if "X-Capsule-Bundle-SHA256" not in download_headers.get("Access-Control-Expose-Headers", ""):
@@ -609,6 +639,42 @@ def main() -> None:
                 )
                 if "Bundle policy failed" not in policy_failure:
                     raise AssertionError("gateway import policy did not reject plaintext bundle")
+                redacted_sha256 = hashlib.sha256(redacted_bytes).hexdigest()
+                upload_handoff, _upload_handoff_headers = post_json(
+                    f"{import_gateway_url}/api/capsules/handoff",
+                    {
+                        "operation": "upload",
+                        "mode": "import",
+                        "bundle_id": "handoff-uploaded-gateway-thread",
+                        "thread_id": "gateway-thread-handoff",
+                        "size_bytes": len(redacted_bytes),
+                        "sha256": redacted_sha256,
+                        "source": "capsule_handoff_tray",
+                    },
+                    auth_headers,
+                )
+                if upload_handoff.get("accepted") is not True:
+                    raise AssertionError(f"gateway upload handoff was not accepted: {upload_handoff}")
+                if upload_handoff.get("upload", {}).get("path") != "/api/capsules/import":
+                    raise AssertionError("gateway upload handoff did not point at import endpoint")
+                if upload_handoff.get("upload", {}).get("headers", {}).get("X-Capsule-Import-Thread") != "gateway-thread-handoff":
+                    raise AssertionError("gateway upload handoff did not include target thread header")
+                upload_commit, _upload_commit_headers = post_json(
+                    f"{import_gateway_url}/api/capsules/handoff",
+                    {
+                        "operation": "upload",
+                        "phase": "commit",
+                        "handoff_id": upload_handoff["handoff_id"],
+                        "artifact_b64": base64.b64encode(redacted_bytes).decode("ascii"),
+                    },
+                    auth_headers,
+                )
+                if upload_commit.get("accepted") is not True:
+                    raise AssertionError(f"gateway upload handoff commit failed: {upload_commit}")
+                if upload_commit.get("result", {}).get("thread_id") != "gateway-thread-handoff":
+                    raise AssertionError("gateway upload handoff commit did not import to the requested thread")
+                if upload_commit.get("result", {}).get("handoff_id") != upload_handoff["handoff_id"]:
+                    raise AssertionError("gateway upload handoff commit did not return the handoff id")
                 imported, import_headers = post_bytes(
                     f"{import_gateway_url}/api/capsules/import",
                     redacted_bytes,

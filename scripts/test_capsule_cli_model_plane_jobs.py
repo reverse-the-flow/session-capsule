@@ -264,6 +264,9 @@ def main() -> None:
                                 "store_upload",
                                 "raw_upload_import",
                                 "stored_bundle_import",
+                                "handoff",
+                                "upload_handshake",
+                                "download_handshake",
                                 "thread_id_override",
                                 "digest_verification",
                                 "bundle_policy_gate",
@@ -297,6 +300,8 @@ def main() -> None:
             required_capabilities = profile_status_payload.get("required_capabilities", [])
             if "store_upload" not in required_capabilities or "digest_verification" not in required_capabilities:
                 raise AssertionError("gateway profile status check did not report required transfer capabilities")
+            if "handoff" not in required_capabilities:
+                raise AssertionError("gateway profile status check did not report required handoff capability")
             if "download" not in profile_status_payload.get("transport_capabilities", []):
                 raise AssertionError("gateway profile status check did not report advertised gateway capabilities")
 
